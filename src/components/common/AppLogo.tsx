@@ -1,0 +1,93 @@
+import React from "react";
+
+interface AppLogoProps {
+  className?: string;
+  size?: number;
+}
+
+export function AppLogo({ className = "w-8 h-8", size = 40 }: AppLogoProps) {
+  return (
+    <svg 
+      width={size} 
+      height={size} 
+      viewBox="0 0 200 200" 
+      fill="none" 
+      xmlns="http://www.w3.org/2000/svg"
+      className={className}
+    >
+      <defs>
+        <linearGradient id="chromeBase" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stopColor="#e8e7eb" />
+          <stop offset="25%" stopColor="#bfc0cd" />
+          <stop offset="45%" stopColor="#ffffff" />
+          <stop offset="55%" stopColor="#8c8d9c" />
+          <stop offset="75%" stopColor="#cfced6" />
+          <stop offset="100%" stopColor="#a3a3b5" />
+        </linearGradient>
+        <linearGradient id="holoShine" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="rgba(245, 179, 199, 0.55)" />
+          <stop offset="35%" stopColor="rgba(191, 189, 237, 0.45)" />
+          <stop offset="65%" stopColor="rgba(255, 231, 186, 0.45)" />
+          <stop offset="100%" stopColor="rgba(168, 209, 240, 0.5)" />
+        </linearGradient>
+        <radialGradient id="cloverShadows" cx="50%" cy="50%" r="50%" fx="30%" fy="30%">
+          <stop offset="0%" stopColor="rgba(255, 255, 255, 0.6)" />
+          <stop offset="40%" stopColor="rgba(141, 133, 154, 0.15)" />
+          <stop offset="85%" stopColor="rgba(69, 61, 80, 0.5)" />
+          <stop offset="100%" stopColor="rgba(20, 16, 26, 0.85)" />
+        </radialGradient>
+        <linearGradient id="edgeHighlight" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="#ffffff" stopOpacity="0.8" />
+          <stop offset="50%" stopColor="rgba(235, 230, 241, 0.2)" />
+          <stop offset="100%" stopColor="rgba(121, 110, 136, 0.7)" />
+        </linearGradient>
+        <filter id="liquidChrome" x="-10%" y="-10%" width="120%" height="120%">
+          <feGaussianBlur stdDeviation="3" result="blur" />
+          <feSpecularLighting in="blur" specularConstant="1.5" specularExponent="35" lightingColor="#ffffff" result="specular">
+            <feDistantLight azimuth="225" elevation="55" />
+          </feSpecularLighting>
+          <feComposite in="specular" in2="SourceAlpha" operator="in" result="specularAlpha" />
+          <feComposite in="SourceGraphic" in2="specularAlpha" operator="arithmetic" k2="1" k3="0.75" result="chromeEffect" />
+        </filter>
+      </defs>
+
+      {/* Sheared drop shadow for cursor feeling */}
+      <path 
+        d="M 100 20 C 120 20, 132 46, 144 56 C 154 68, 180 80, 180 100 C 180 120, 154 132, 144 144 C 132 154, 120 180, 100 180 C 80 180, 68 154, 56 144 C 46 132, 20 120, 20 100 C 20 80, 46 68, 56 56 C 68 46, 80 20, 100 20 Z" 
+        fill="rgba(0,0,0,0.5)" 
+        transform="translate(10, 25) skewX(-15) scale(0.9)" 
+        style={{ transformOrigin: "center", filter: "blur(6px)" }} 
+      />
+
+      <circle cx="100" cy="100" r="82" fill="url(#holoShine)" opacity="0.35" style={{ filter: "blur(24px)" }} />
+
+      <path 
+        d="M 100 20 C 120 20, 132 46, 144 56 C 154 68, 180 80, 180 100 C 180 120, 154 132, 144 144 C 132 154, 120 180, 100 180 C 80 180, 68 154, 56 144 C 46 132, 20 120, 20 100 C 20 80, 46 68, 56 56 C 68 46, 80 20, 100 20 Z" 
+        fill="url(#chromeBase)" 
+      />
+
+      <path 
+        d="M 100 20 C 120 20, 132 46, 144 56 C 154 68, 180 80, 180 100 C 180 120, 154 132, 144 144 C 132 154, 120 180, 100 180 C 80 180, 68 154, 56 144 C 46 132, 20 120, 20 100 C 20 80, 46 68, 56 56 C 68 46, 80 20, 100 20 Z" 
+        fill="url(#holoShine)" 
+        style={{ mixBlendMode: "overlay" }} 
+      />
+
+      <path 
+        d="M 100 25 C 117 25, 128 49, 139 58 C 148 68, 175 79, 175 100 C 175 121, 148 132, 139 142 C 128 151, 117 175, 100 175 C 83 175, 72 151, 61 142 C 52 132, 25 121, 25 100 C 25 79, 52 68, 61 58 C 72 49, 83 25, 100 25 Z" 
+        fill="url(#cloverShadows)" 
+        opacity="0.65" 
+        style={{ mixBlendMode: "multiply" }} 
+      />
+
+      <path d="M 100 20 L 100 180 M 20 100 L 180 100" stroke="url(#edgeHighlight)" strokeWidth="1.5" opacity="0.6" />
+      
+      <path d="M 100 100 C 110 80, 120 80, 140 70 M 100 100 C 90 80, 80 80, 60 70 M 100 100 C 110 120, 120 120, 140 130 M 100 100 C 90 120, 80 120, 60 130" stroke="#ffffff" strokeWidth="0.75" opacity="0.4" />
+
+      <path d="M 100 100 C 120 110, 120 120, 130 140 M 100 100 C 80 110, 80 120, 70 140 M 100 100 C 120 90, 120 80, 130 60 M 100 100 C 80 90, 80 80, 70 60" stroke="#ffffff" strokeWidth="0.75" opacity="0.4" />
+
+      <path d="M 100 82 Q 100 100 118 100 Q 100 100 100 118 Q 100 100 82 100 Q 100 100 100 82 Z" fill="#ffffff" opacity="0.95" style={{ filter: "drop-shadow(0px 0px 8px #ffffff)" }} />
+      
+      <circle cx="100" cy="100" r="4" fill="#ffffff" />
+    </svg>
+  );
+}

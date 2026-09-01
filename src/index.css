@@ -1,0 +1,96 @@
+@import "tailwindcss";
+
+@theme {
+  --color-app-bg: #FAF7F2;
+  --color-canvas-card: #FFFFFF;
+  --color-sidebar-bg: #121316;
+  --color-sidebar-hover: #1E2026;
+  --color-sidebar-active: #272A33;
+  --color-card-lemon: #F8FFA1;
+  --color-card-yellow: #FEF08A;
+  --color-card-pink: #F6D5EE;
+  --color-card-rose: #FDA4AF;
+  --color-card-lilac: #DDD6FE;
+  --color-card-purple: #C4B5FD;
+  --color-card-mint: #C7E6C1;
+  --color-card-green: #A7F3D0;
+  --color-card-sky: #BAE6FD;
+  --color-card-blue: #93C5FD;
+  --color-card-navy: #1E293B;
+  --color-text-main: #18191D;
+  --color-text-muted: #797E8B;
+  --color-border-subtle: #ECE6DD;
+}
+
+body {
+  background-color: #FAF7F2;
+  color: #18191D;
+  font-family: -apple-system, BlinkMacSystemFont, "Plus Jakarta Sans", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Warm Ivory & Pastel Bento Cards */
+.bento-card {
+  background-color: #FFFFFF;
+  border: 1px solid #ECE6DD;
+  border-radius: 28px;
+  box-shadow: 0 4px 20px -4px rgba(0, 0, 0, 0.02), 0 2px 6px -1px rgba(0, 0, 0, 0.01);
+}
+
+.bento-lemon {
+  background-color: #FEF9C3;
+  border: 1px solid #FEF08A;
+  border-radius: 28px;
+}
+
+.bento-pink {
+  background-color: #FCE7F3;
+  border: 1px solid #FBCFE8;
+  border-radius: 28px;
+}
+
+.bento-lilac {
+  background-color: #EDE9FE;
+  border: 1px solid #DDD6FE;
+  border-radius: 28px;
+}
+
+.bento-mint {
+  background-color: #DCFCE7;
+  border: 1px solid #BBF7D0;
+  border-radius: 28px;
+}
+
+.bento-sky {
+  background-color: #E0F2FE;
+  border: 1px solid #BAE6FD;
+  border-radius: 28px;
+}
+
+/* Pill UI elements */
+.pill-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #D9D2C7;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #BEB7AA;
+}

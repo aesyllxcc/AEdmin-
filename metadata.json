@@ -1,0 +1,6 @@
+{
+  "name": "AEDMIN",
+  "description": "Apple-Inspired Freelancer Operating System & Global Times for Executive Assistants and Cross-Timezone Consultants.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
