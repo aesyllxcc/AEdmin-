@@ -96,7 +96,7 @@ export function Header() {
             {isSuperAdmin ? 'Master Platform' : (currentUser?.fullName ? `${currentUser.fullName}'s Workspace` : 'Private Workspace')}
           </span>
           <span className="text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded bg-stone-100 text-stone-600">
-            {currentUser?.subscriptionTier || (isSuperAdmin ? 'Enterprise' : 'Active')}
+            {isSuperAdmin ? 'Platform Owner' : 'Encrypted Vault'}
           </span>
         </div>
 

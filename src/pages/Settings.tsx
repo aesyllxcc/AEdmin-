@@ -1170,7 +1170,7 @@ export default function Settings() {
                   <Lock className="w-3.5 h-3.5" /> Single-Tenant Data Isolation
                 </span>
                 <span className="px-3 py-1 bg-black text-white text-xs font-bold rounded-full">
-                  {currentUser?.subscriptionTier || (isSuperAdmin ? 'Enterprise Platform' : 'Pro Tier')}
+                  {isSuperAdmin ? 'Platform Owner' : 'Active Workspace'}
                 </span>
               </div>
             </div>
@@ -1194,7 +1194,7 @@ export default function Settings() {
                     </h3>
                   </div>
                   <p className="text-xs text-stone-400">
-                    You are authorized as the sole Owner/Admin to provision tenant accounts, verify manual payments, and manage SaaS subscriptions.
+                    You are authorized as the sole Owner/Admin to provision tenant accounts, inspect workspaces, and manage platform settings.
                   </p>
                 </div>
 
@@ -1277,53 +1277,50 @@ export default function Settings() {
             </div>
           </form>
 
-          {/* Active Accounts List */}
-          <div className="bg-white p-6 md:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-4">
-            <div className="flex items-center justify-between pb-3 border-b border-[#ECE6DD]">
-              <div>
-                <h3 className="text-sm font-bold text-[#18191D]">Active Workspace Accounts ({userAccounts.length})</h3>
-                <p className="text-xs text-stone-500">Provisioned credentials with localized session hashes.</p>
+          {/* Active Accounts List (Admin / Owner Only) */}
+          {(isOwner || isSuperAdmin) && (
+            <div className="bg-white p-6 md:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-[#ECE6DD]">
+                <div>
+                  <h3 className="text-sm font-bold text-[#18191D]">Active Workspace Accounts ({userAccounts.length})</h3>
+                  <p className="text-xs text-stone-500">Provisioned credentials with localized session hashes.</p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {userAccounts.map(account => (
+                  <div key={account.id} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-full bg-[#18191D] text-white flex items-center justify-center text-xs font-bold">
+                        {account.fullName.charAt(0)}
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-[#18191D]">{account.fullName}</span>
+                          {account.isPrimaryOwner && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900">
+                              Super Admin / Owner
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-stone-500">{account.email} • Role: <strong>{account.role}</strong></p>
+                      </div>
+                    </div>
+
+                    {!account.isPrimaryOwner && account.role !== 'Owner' && isOwner && (
+                      <button
+                        onClick={() => deleteUserAccount(account.id)}
+                        className="text-stone-400 hover:text-rose-600 p-2 transition-colors cursor-pointer"
+                        title="Revoke access"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                ))}
               </div>
             </div>
-
-            <div className="space-y-3">
-              {userAccounts.map(account => (
-                <div key={account.id} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-full bg-[#18191D] text-white flex items-center justify-center text-xs font-bold">
-                      {account.fullName.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-bold text-[#18191D]">{account.fullName}</span>
-                        {account.isPrimaryOwner && (
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-900">
-                            Super Admin / Owner
-                          </span>
-                        )}
-                        {account.subscriptionTier && (
-                          <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-stone-200 text-stone-800">
-                            {account.subscriptionTier}
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-stone-500">{account.email} • Role: <strong>{account.role}</strong></p>
-                    </div>
-                  </div>
-
-                  {!account.isPrimaryOwner && account.role !== 'Owner' && isOwner && (
-                    <button
-                      onClick={() => deleteUserAccount(account.id)}
-                      className="text-stone-400 hover:text-rose-600 p-2 transition-colors cursor-pointer"
-                      title="Revoke access"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* Provision New Account (Owner Only) */}
           {isOwner && (

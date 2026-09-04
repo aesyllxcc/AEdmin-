@@ -224,6 +224,92 @@ export interface ClientDailyRoutine {
   isInternal?: boolean;
 }
 
+export interface ExecutiveBriefingSection {
+  id: string; // 'today' | 'attention' | 'schedule' | 'important' | 'work' | 'personal' | 'handled' | 'upcoming' | 'ea_note' | 'onboarding' | 'retainer' | 'billing'
+  title: string;
+  customTitle?: string;
+  enabled: boolean;
+  order: number;
+  description?: string;
+}
+
+export interface ExecutiveBriefingSnapshot {
+  id: string;
+  clientId: string;
+  updatedAt: string;
+  publishedAt?: string;
+  publishedBy?: string;
+  isPublished: boolean;
+  perspective: 'today' | 'tomorrow' | 'week' | 'month';
+  eaGreeting: string;
+  eaNote: string;
+  accountStatusText: string;
+  accountStatusType: 'optimal' | 'attention' | 'in_review';
+  sections: ExecutiveBriefingSection[];
+  
+  // Specific block data
+  todaySummary: string;
+  todayItems: { id: string; time?: string; title: string; category: string; detail?: string; isPriority?: boolean }[];
+  attentionItems: { id: string; title: string; type: 'decision' | 'approval' | 'reply' | 'blocker'; deadline?: string; impact?: string; status: 'pending' | 'approved' | 'rejected' }[];
+  scheduleItems: { 
+    id: string; 
+    time: string; 
+    title: string; 
+    location?: string; 
+    prepNote?: string; 
+    isVirtual?: boolean;
+    isPersonal?: boolean;
+    commitmentType?: 'business' | 'personal';
+  }[];
+  importantItems: { id: string; title: string; detail: string; impact: 'high' | 'medium' | 'info'; category?: string }[];
+  workItems: { id: string; title: string; category: string; status: string; progressPercent?: number; summary: string }[];
+  personalItems: { id: string; title: string; category: string; timeOrDate?: string; summary?: string }[];
+  handledItems: { id: string; title: string; timeAgo: string; category: string; completed: boolean }[];
+  upcomingItems: { id: string; timeframe: string; title: string; detail: string }[];
+}
+
+export interface ClientPortalConfig {
+  welcomeHeadline?: string;
+  welcomeMessage?: string;
+  showBriefings?: boolean;
+  showApprovals?: boolean;
+  showStrategicObjectives?: boolean;
+  showRecommendations?: boolean;
+  showKnowledgeBase?: boolean;
+  showBillingInvoices?: boolean;
+  showRetainerBurnRate?: boolean;
+  brandAccentColor?: string;
+  customBannerNote?: string;
+  portalHeaderTitle?: string;
+  
+  // Staging / Publishing Workflow
+  isPublished?: boolean;
+  publishedAt?: string;
+  publishedBy?: string;
+  lastDraftEditedAt?: string;
+  hasUnpublishedDraftChanges?: boolean;
+
+  // Staged draft vs Published live snapshot
+  draftBriefing?: ExecutiveBriefingSnapshot;
+  publishedBriefing?: ExecutiveBriefingSnapshot;
+
+  // 60-Second Executive Pulse Snapshot
+  pulseStatusText?: string;
+  pulseStatusType?: 'optimal' | 'attention' | 'in_review';
+  executiveSummary60s?: string;
+  keyHighlights?: string[];
+  pinnedActionId?: string;
+  priorityFocusThisWeek?: string[];
+  
+  // Quick notice banner
+  announcementBanner?: {
+    active: boolean;
+    title: string;
+    message: string;
+    type?: 'info' | 'success' | 'alert';
+  };
+}
+
 export interface Client {
   id: string;
   code: string; // e.g. "ARKG", "STRK"
@@ -249,6 +335,7 @@ export interface Client {
   joinedDate: string;
   portalToken?: string;
   portalCustomNotes?: string;
+  portalConfig?: ClientPortalConfig;
   dailyRoutines?: ClientDailyRoutine[];
   offboardingChecklist?: {
     id: string;

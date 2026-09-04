@@ -4,7 +4,8 @@ import {
   ManualPaymentRecord, 
   PlatformSettings, 
   TenantSubscription,
-  ManualPaymentMethod
+  ManualPaymentMethod,
+  AccessRequest
 } from '@/types/saas';
 import { 
   initialUserProfile, 
@@ -18,7 +19,8 @@ export const SAAS_STORAGE_KEYS = {
   PLATFORM_SETTINGS: 'aedmin_saas_platform_settings_v2',
   WORKSPACES_REGISTRY: 'aedmin_saas_workspaces_registry_v2',
   MANUAL_PAYMENTS: 'aedmin_saas_manual_payments_v2',
-  PROVISIONING_AUDIT: 'aedmin_saas_provisioning_audit_v2'
+  PROVISIONING_AUDIT: 'aedmin_saas_provisioning_audit_v2',
+  ACCESS_REQUESTS: 'aedmin_saas_access_requests_v2'
 };
 
 export const SUPER_ADMIN_EMAIL = 'hello.aespace@gmail.com';
@@ -406,6 +408,126 @@ export function getManualPaymentsLedger(): ManualPaymentRecord[] {
 
 export function saveManualPaymentsLedger(payments: ManualPaymentRecord[]) {
   localStorage.setItem(SAAS_STORAGE_KEYS.MANUAL_PAYMENTS, JSON.stringify(payments));
+}
+
+// Initial Access Requests Seed
+export const initialAccessRequests: AccessRequest[] = [
+  {
+    id: 'req_001',
+    fullName: 'Maria Rodriguez',
+    email: 'maria.assistant@opsvalencia.es',
+    businessName: 'Valencia Ops & Virtual EA',
+    planId: 'pro_executive',
+    billingCycle: 'monthly',
+    currency: 'USD',
+    amount: 79,
+    paymentMethod: 'paypal',
+    referenceNumber: 'PAYPAL-98412894X',
+    notes: 'Paid via PayPal USD. Requesting immediate EA Executive setup.',
+    status: 'pending',
+    submittedAt: '2026-08-30T14:20:00.000Z'
+  }
+];
+
+export function getAccessRequests(): AccessRequest[] {
+  const saved = localStorage.getItem(SAAS_STORAGE_KEYS.ACCESS_REQUESTS);
+  if (!saved) {
+    localStorage.setItem(SAAS_STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(initialAccessRequests));
+    return initialAccessRequests;
+  }
+  try {
+    return JSON.parse(saved);
+  } catch {
+    return initialAccessRequests;
+  }
+}
+
+export function saveAccessRequests(requests: AccessRequest[]) {
+  localStorage.setItem(SAAS_STORAGE_KEYS.ACCESS_REQUESTS, JSON.stringify(requests));
+}
+
+export function addAccessRequest(data: Omit<AccessRequest, 'id' | 'submittedAt' | 'status'>): AccessRequest {
+  const current = getAccessRequests();
+  const newReq: AccessRequest = {
+    ...data,
+    id: `req_${Date.now()}`,
+    status: 'pending',
+    submittedAt: new Date().toISOString()
+  };
+  saveAccessRequests([newReq, ...current]);
+  return newReq;
+}
+
+export function updateAccessRequestStatus(
+  id: string, 
+  status: 'approved' | 'rejected', 
+  notes?: string
+): boolean {
+  const current = getAccessRequests();
+  const updated = current.map(req => {
+    if (req.id === id) {
+      return {
+        ...req,
+        status,
+        approvedAt: status === 'approved' ? new Date().toISOString() : undefined,
+        rejectedReason: status === 'rejected' ? (notes || 'Declined by administrator') : undefined
+      };
+    }
+    return req;
+  });
+  saveAccessRequests(updated);
+  return true;
+}
+
+// Calculate Real Storage and Entity Counts for a Tenant
+export function calculateTenantStats(tenantId: string): {
+  clientCount: number;
+  taskCount: number;
+  projectCount: number;
+  invoiceCount: number;
+  storageUsedKB: number;
+  storageUsedMB: number;
+} {
+  const getCount = (keySuffix: string): number => {
+    const key = getTenantStorageKey(tenantId, keySuffix);
+    const item = localStorage.getItem(key);
+    if (!item) return 0;
+    try {
+      const parsed = JSON.parse(item);
+      return Array.isArray(parsed) ? parsed.length : 1;
+    } catch {
+      return 0;
+    }
+  };
+
+  const clientCount = getCount('clients');
+  const taskCount = getCount('tasks');
+  const projectCount = getCount('projects');
+  const invoiceCount = getCount('invoices');
+
+  // Compute total characters of all keys for this tenant
+  let totalBytes = 0;
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    if (k && k.startsWith(`aedmin_ws_${tenantId}_`)) {
+      const v = localStorage.getItem(k);
+      if (v) {
+        totalBytes += k.length + v.length;
+      }
+    }
+  }
+
+  const storageUsedKB = Math.round((totalBytes / 1024) * 10) / 10;
+  const storageUsedMB = Math.round((totalBytes / (1024 * 1024)) * 100) / 100;
+
+  return {
+    clientCount,
+    taskCount,
+    projectCount,
+    invoiceCount,
+    storageUsedKB,
+    storageUsedMB
+  };
 }
 
 // Initialize tenant default data stores if empty

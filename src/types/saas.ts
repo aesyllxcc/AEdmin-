@@ -144,3 +144,21 @@ export interface PlatformSettings {
   };
   allowSelfRegistrationWaitlist: boolean;
 }
+
+export interface AccessRequest {
+  id: string;
+  fullName: string;
+  email: string;
+  businessName?: string;
+  planId?: TenantPlanTier;
+  billingCycle?: 'monthly' | 'annual';
+  currency?: 'USD' | 'PHP';
+  amount?: number;
+  paymentMethod?: ManualPaymentMethod;
+  referenceNumber?: string;
+  notes?: string;
+  status: 'pending' | 'approved' | 'rejected';
+  submittedAt: string;
+  approvedAt?: string;
+  rejectedReason?: string;
+}

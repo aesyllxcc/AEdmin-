@@ -24,6 +24,7 @@ import {
   saveWorkspacesRegistry,
   getManualPaymentsLedger,
   saveManualPaymentsLedger,
+  getPlatformSettings,
   initializeTenantDataIfMissing,
   initialWorkspaces
 } from '@/utils/workspaceManager';
@@ -69,6 +70,9 @@ interface AuthContextType {
     sendTemporaryPassword?: string;
   }) => Promise<{ success: boolean; message?: string; tempPassword?: string; tenantId?: string }>;
   updateTenantSubscriptionStatus: (tenantId: string, status: UserAccount['subscriptionStatus'], notes?: string) => void;
+  updateTenantPlanTier: (tenantId: string, planTier: TenantPlanTier) => { success: boolean; message?: string };
+  inspectedTenantId: string | null;
+  setInspectedTenantId: (tenantId: string | null) => void;
   recordManualPaymentForTenant: (paymentData: {
     tenantId: string;
     amount: number;
@@ -645,6 +649,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     logSystemAction('update', 'auth', `Tenant subscription for ${tenantId} updated to ${status}`, tenantId);
   };
 
+  // Super Admin: Update Tenant Plan Tier (Upgrade / Downgrade)
+  const updateTenantPlanTier = (tenantId: string, planTier: TenantPlanTier): { success: boolean; message?: string } => {
+    const isOwner = currentUser?.role === 'Owner' && (currentUser.isPrimaryOwner || currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase());
+    if (!isOwner) {
+      return { success: false, message: 'Only Super Admin can modify subscription plan tiers.' };
+    }
+
+    const platformSettings = getPlatformSettings();
+    const planConfig = platformSettings.plans.find(p => p.id === planTier);
+
+    setUserAccounts(prev => prev.map(u => {
+      if (u.tenantId === tenantId) {
+        return {
+          ...u,
+          subscriptionTier: planTier
+        };
+      }
+      return u;
+    }));
+
+    const workspaces = getWorkspacesRegistry();
+    saveWorkspacesRegistry(workspaces.map(ws => {
+      if (ws.id === tenantId) {
+        return {
+          ...ws,
+          plan: planTier,
+          subscription: {
+            ...ws.subscription,
+            planId: planTier,
+            planName: planConfig?.name || (planTier === 'starter_freelance' ? 'Freelance Starter' : planTier === 'pro_executive' ? 'Executive Pro' : 'Agency & Studio'),
+            maxClients: planConfig?.clientLimit || (planTier === 'starter_freelance' ? 5 : planTier === 'pro_executive' ? 25 : 999),
+            maxStorageMB: planConfig?.storageLimitMB || (planTier === 'starter_freelance' ? 2000 : planTier === 'pro_executive' ? 10000 : 50000),
+            price: planConfig?.monthlyPriceUSD || ws.subscription.price
+          }
+        };
+      }
+      return ws;
+    }));
+
+    logSystemAction('update', 'auth', `Super Admin updated subscription plan for tenant ${tenantId} to ${planConfig?.name || planTier}`, tenantId);
+    return { success: true, message: `Successfully updated tenant plan to ${planConfig?.name || planTier}!` };
+  };
+
   // Super Admin: Record Manual Payment for existing Tenant
   const recordManualPaymentForTenant = (paymentData: {
     tenantId: string;
@@ -819,7 +866,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     (currentUser.isSuperAdmin || currentUser.email.toLowerCase() === SUPER_ADMIN_EMAIL.toLowerCase() || currentUser.isPrimaryOwner)
   );
 
-  const activeTenantId = currentUser?.tenantId || (isSuperAdmin ? SUPER_ADMIN_TENANT_ID : (currentUser ? `ws_${currentUser.id}` : ''));
+  const [inspectedTenantId, setInspectedTenantId] = useState<string | null>(null);
+
+  const activeTenantId = inspectedTenantId || currentUser?.tenantId || (isSuperAdmin ? SUPER_ADMIN_TENANT_ID : (currentUser ? `ws_${currentUser.id}` : ''));
 
   return (
     <AuthContext.Provider
@@ -832,12 +881,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         isSuperAdmin,
         activeTenantId,
+        inspectedTenantId,
+        setInspectedTenantId,
         login,
         logout,
         updatePasswordForCurrentUser,
         completeSetupWizard,
         provisionTenantAccount,
         updateTenantSubscriptionStatus,
+        updateTenantPlanTier,
         recordManualPaymentForTenant,
         resetTenantPasswordByAdmin,
         deleteTenantWorkspaceByAdmin,

@@ -17,7 +17,8 @@ import {
   Save, 
   Check, 
   Edit2, 
-  Sliders
+  Sliders,
+  Tag
 } from 'lucide-react';
 import { Client, CustomClientField } from '@/types';
 import { useApp } from '@/context/AppContext';
@@ -92,7 +93,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
     keyRelationshipsText: intel.socialRelationships?.map((r: any) => `${r.name} (${r.relationship}): ${r.notes || ''}`).join('\n') || 'Marcus Vance (Lead Investor): Weekly check-in on Mondays\nSarah Jenkins (General Counsel): Contract reviews',
 
     // Goals
-    goalsText: intel.goals?.map((g: any) => `[${g.timeframe.toUpperCase()}] ${g.title} - ${g.targetDate}`).join('\n') || '[Q3] Complete Series B Funding Round - 2026-09-30\n[ANNUAL] Launch European Division - 2026-12-31',
+    goalsText: intel.goals?.map((g: any) => `[${g.timeframe?.toUpperCase() || 'Q3'}] ${g.title} - ${g.targetDate || '2026-12-31'}`).join('\n') || '[Q3] Complete Series B Funding Round - 2026-09-30\n[ANNUAL] Launch European Division - 2026-12-31',
 
     // Hobbies
     interests: intel.hobbiesAndInterests?.interests || 'Tennis, fine dining, contemporary art, angel investing',
@@ -106,40 +107,46 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
     invoiceApprovalThreshold: intel.financialPreferences?.invoiceApprovalThreshold || 5000,
 
     // Custom Fields
-    customFields: intel.customFields || [
+    customFields: (intel.customFields || [
       { id: 'cf_1', label: 'Coffee Order', value: 'Double espresso with splash of oat milk', category: 'Personal' },
       { id: 'cf_2', label: 'Slack Handle', value: '@executive_lead', category: 'Custom' }
-    ]
+    ]) as CustomClientField[]
   });
 
-  const [newCustomLabel, setNewCustomLabel] = useState('');
-  const [newCustomValue, setNewCustomValue] = useState('');
-  const [newCustomCategory, setNewCustomCategory] = useState<any>('Personal');
+  // Global custom field inputs for the master custom tab
+  const [masterCustomLabel, setMasterCustomLabel] = useState('');
+  const [masterCustomValue, setMasterCustomValue] = useState('');
+  const [masterCustomCategory, setMasterCustomCategory] = useState<any>('Personal');
 
   const handleFieldChange = (field: string, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleAddCustomField = () => {
-    if (!newCustomLabel.trim()) return;
+  const handleAddCustomField = (label: string, value: string, category: string) => {
+    if (!label.trim()) return;
     const newField: CustomClientField = {
-      id: `cf_${Date.now()}`,
-      label: newCustomLabel.trim(),
-      value: newCustomValue.trim(),
-      category: newCustomCategory
+      id: `cf_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      label: label.trim(),
+      value: value.trim(),
+      category: category as any
     };
     setFormData(prev => ({
       ...prev,
       customFields: [...prev.customFields, newField]
     }));
-    setNewCustomLabel('');
-    setNewCustomValue('');
   };
 
   const handleDeleteCustomField = (id: string) => {
     setFormData(prev => ({
       ...prev,
       customFields: prev.customFields.filter(f => f.id !== id)
+    }));
+  };
+
+  const handleUpdateCustomField = (id: string, label: string, value: string) => {
+    setFormData(prev => ({
+      ...prev,
+      customFields: prev.customFields.map(f => f.id === id ? { ...f, label, value } : f)
     }));
   };
 
@@ -218,6 +225,137 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
     setTimeout(() => setIsSavedToast(false), 3000);
   };
 
+  // Helper component to render and add custom fields inside any tab
+  const TabCustomFieldsSection = ({ category, categoryLabel }: { category: string; categoryLabel: string }) => {
+    const [labelInput, setLabelInput] = useState('');
+    const [valInput, setValInput] = useState('');
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [editLabel, setEditLabel] = useState('');
+    const [editVal, setEditVal] = useState('');
+
+    const matchingFields = formData.customFields.filter(f => 
+      (f.category || 'General').toLowerCase() === category.toLowerCase() ||
+      (category === 'Personal' && (!f.category || f.category === 'Custom'))
+    );
+
+    const handleAdd = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!labelInput.trim()) return;
+      handleAddCustomField(labelInput, valInput, category);
+      setLabelInput('');
+      setValInput('');
+    };
+
+    const startEditing = (field: CustomClientField) => {
+      setEditingId(field.id);
+      setEditLabel(field.label);
+      setEditVal(field.value);
+    };
+
+    const saveEditing = (id: string) => {
+      handleUpdateCustomField(id, editLabel, editVal);
+      setEditingId(null);
+    };
+
+    return (
+      <div className="pt-4 border-t border-[#ECE6DD] space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-xs font-bold text-stone-800">
+            <Tag className="w-3.5 h-3.5 text-purple-600" />
+            <span>Custom {categoryLabel} Fields ({matchingFields.length})</span>
+          </div>
+          <span className="text-[10px] text-stone-400">Add tailored client attributes to this section</span>
+        </div>
+
+        {matchingFields.length > 0 && (
+          <div className="space-y-2">
+            {matchingFields.map(field => (
+              <div 
+                key={field.id} 
+                className="p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] flex items-center justify-between gap-3 text-xs"
+              >
+                {editingId === field.id ? (
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      type="text"
+                      value={editLabel}
+                      onChange={e => setEditLabel(e.target.value)}
+                      className="p-1.5 bg-white border border-[#ECE6DD] rounded-lg text-xs"
+                      placeholder="Field Label"
+                    />
+                    <input
+                      type="text"
+                      value={editVal}
+                      onChange={e => setEditVal(e.target.value)}
+                      className="p-1.5 bg-white border border-[#ECE6DD] rounded-lg text-xs"
+                      placeholder="Field Value"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <span className="font-bold text-stone-800">{field.label}</span>
+                    <span className="font-mono text-stone-600 sm:col-span-2">{field.value || '—'}</span>
+                  </div>
+                )}
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {editingId === field.id ? (
+                    <button
+                      type="button"
+                      onClick={() => saveEditing(field.id)}
+                      className="p-1 text-emerald-600 hover:text-emerald-700 font-bold text-[11px] bg-emerald-50 px-2 rounded-lg cursor-pointer"
+                    >
+                      Done
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startEditing(field)}
+                      className="p-1 text-stone-400 hover:text-stone-700 cursor-pointer"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteCustomField(field.id)}
+                    className="p-1 text-stone-400 hover:text-rose-600 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Add custom field in this tab form */}
+        <form onSubmit={handleAdd} className="p-3 bg-[#FCFAF8] rounded-2xl border border-dashed border-stone-300 flex flex-col sm:flex-row gap-2 text-xs">
+          <input
+            type="text"
+            placeholder={`Add ${categoryLabel} field name (e.g. Favorite Coffee)`}
+            value={labelInput}
+            onChange={e => setLabelInput(e.target.value)}
+            className="flex-1 p-2 rounded-xl border border-[#ECE6DD] bg-white focus:outline-none focus:ring-1 focus:ring-stone-400"
+          />
+          <input
+            type="text"
+            placeholder="Value (e.g. Iced Oat Cortado)"
+            value={valInput}
+            onChange={e => setValInput(e.target.value)}
+            className="flex-1 p-2 rounded-xl border border-[#ECE6DD] bg-white focus:outline-none focus:ring-1 focus:ring-stone-400"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2 bg-stone-900 text-white rounded-xl font-bold flex items-center justify-center gap-1.5 shrink-0 hover:bg-black transition-all cursor-pointer"
+          >
+            <Plus className="w-3.5 h-3.5" /> Add Field
+          </button>
+        </form>
+      </div>
+    );
+  };
+
   const navItems = [
     { id: 'personal', label: 'Personal Info', icon: User, color: 'text-blue-600' },
     { id: 'business', label: 'Business Profile', icon: Building2, color: 'text-stone-700' },
@@ -231,7 +369,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
     { id: 'goals', label: 'Executive Goals', icon: Target, color: 'text-rose-700' },
     { id: 'hobbies', label: 'Hobbies & Gifts', icon: Sparkles, color: 'text-pink-600' },
     { id: 'financial', label: 'Financial Settings', icon: DollarSign, color: 'text-emerald-700' },
-    { id: 'custom', label: 'Custom Fields', icon: Sliders, color: 'text-stone-800' }
+    { id: 'custom', label: 'All Custom Fields', icon: Sliders, color: 'text-stone-800' }
   ];
 
   return (
@@ -256,7 +394,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
           )}
           <button
             onClick={handleSaveProfile}
-            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-full flex items-center gap-2 transition-all shadow-sm active:scale-95"
+            className="px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white text-xs font-bold rounded-full flex items-center gap-2 transition-all shadow-sm active:scale-95 cursor-pointer"
           >
             <Save className="w-3.5 h-3.5" />
             Save Profile Dossier
@@ -275,7 +413,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
               <button
                 key={item.id}
                 onClick={() => setActiveSubTab(item.id as any)}
-                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all text-left ${
+                className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all text-left cursor-pointer ${
                   isActive 
                     ? 'bg-white text-stone-900 font-bold shadow-xs border border-[#ECE6DD]' 
                     : 'text-stone-600 hover:bg-stone-200/50'
@@ -355,6 +493,9 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+
+              {/* Custom Fields in Personal Tab */}
+              <TabCustomFieldsSection category="Personal" categoryLabel="Personal" />
             </div>
           )}
 
@@ -411,6 +552,9 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+
+              {/* Custom Fields in Business Tab */}
+              <TabCustomFieldsSection category="Business" categoryLabel="Business" />
             </div>
           )}
 
@@ -459,6 +603,9 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+
+              {/* Custom Fields in Family Tab */}
+              <TabCustomFieldsSection category="Family" categoryLabel="Family" />
             </div>
           )}
 
@@ -499,14 +646,17 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                 />
               </div>
               <div className="text-xs">
-                <label className="font-semibold text-stone-700 block mb-1">Maintenance & Contractor Contacts</label>
+                <label className="font-semibold text-stone-700 block mb-1">Maintenance Contacts & Service Vendors</label>
                 <textarea
-                  rows={3}
+                  rows={2}
                   value={formData.maintenanceContacts}
                   onChange={(e) => handleFieldChange('maintenanceContacts', e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+
+              {/* Custom Fields in Household Tab */}
+              <TabCustomFieldsSection category="Household" categoryLabel="Household" />
             </div>
           )}
 
@@ -514,39 +664,40 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
           {activeSubTab === 'travel' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Plane className="w-4 h-4 text-indigo-600" /> Travel Management & Airline Preferences
+                <Plane className="w-4 h-4 text-indigo-600" /> Travel Management & Flight Protocols
               </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
                 <div>
                   <label className="font-semibold text-stone-700 block mb-1">Frequent Flyer Numbers</label>
                   <input
                     type="text"
-                    placeholder="Delta Platinum: 94827104, Emirates Skywards: 829104"
                     value={formData.frequentFlyerNumbers}
                     onChange={(e) => handleFieldChange('frequentFlyerNumbers', e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Passport Number & Expiry</label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input
-                      type="text"
-                      placeholder="Passport #"
-                      value={formData.passportNumber}
-                      onChange={(e) => handleFieldChange('passportNumber', e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
-                    />
-                    <input
-                      type="date"
-                      value={formData.passportExpiryDate}
-                      onChange={(e) => handleFieldChange('passportExpiryDate', e.target.value)}
-                      className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
-                    />
-                  </div>
+                  <label className="font-semibold text-stone-700 block mb-1">Passport Number</label>
+                  <input
+                    type="text"
+                    value={formData.passportNumber}
+                    onChange={(e) => handleFieldChange('passportNumber', e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
+                  />
                 </div>
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Flight Seating Preference</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Passport Expiry Date</label>
+                  <input
+                    type="date"
+                    value={formData.passportExpiryDate}
+                    onChange={(e) => handleFieldChange('passportExpiryDate', e.target.value)}
+                    className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Seating Preferences</label>
                   <input
                     type="text"
                     value={formData.seatingPreference}
@@ -564,6 +715,9 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   />
                 </div>
               </div>
+
+              {/* Custom Fields in Travel Tab */}
+              <TabCustomFieldsSection category="Travel" categoryLabel="Travel" />
             </div>
           )}
 
@@ -571,7 +725,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
           {activeSubTab === 'health' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Activity className="w-4 h-4 text-emerald-600" /> Health Records & Dietary Guidelines
+                <Activity className="w-4 h-4 text-emerald-600" /> Health Records & Dietary Heuristics
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
@@ -596,17 +750,15 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   <label className="font-semibold text-stone-700 block mb-1">Blood Type</label>
                   <input
                     type="text"
-                    placeholder="e.g. O Positive"
                     value={formData.bloodType}
                     onChange={(e) => handleFieldChange('bloodType', e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Primary Physician</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Primary Physician / Dental Contacts</label>
                   <input
                     type="text"
-                    placeholder="Dr. Smith, Concierge Medical"
                     value={formData.physicianContact}
                     onChange={(e) => handleFieldChange('physicianContact', e.target.value)}
                     className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
@@ -614,14 +766,17 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                 </div>
               </div>
               <div className="text-xs">
-                <label className="font-semibold text-stone-700 block mb-1">Wellness & Fitness Routines</label>
-                <input
-                  type="text"
+                <label className="font-semibold text-stone-700 block mb-1">Wellness Routines & Fitness Schedule</label>
+                <textarea
+                  rows={2}
                   value={formData.wellnessRoutines}
                   onChange={(e) => handleFieldChange('wellnessRoutines', e.target.value)}
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+
+              {/* Custom Fields in Health Tab */}
+              <TabCustomFieldsSection category="Health" categoryLabel="Health & Wellness" />
             </div>
           )}
 
@@ -629,11 +784,11 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
           {activeSubTab === 'grooming' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Scissors className="w-4 h-4 text-purple-600" /> Grooming Appointments & Personal Styling
+                <Scissors className="w-4 h-4 text-purple-600" /> Grooming, Aesthetics & Stylist Bookings
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Preferred Stylist / Barber</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Preferred Stylist / Salon / Barber</label>
                   <input
                     type="text"
                     value={formData.preferredStylist}
@@ -642,7 +797,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Cadence / Frequency</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Appointment Cadence</label>
                   <input
                     type="text"
                     value={formData.cadence}
@@ -652,7 +807,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                 </div>
               </div>
               <div className="text-xs">
-                <label className="font-semibold text-stone-700 block mb-1">Standing Appointment Notes</label>
+                <label className="font-semibold text-stone-700 block mb-1">Standing Appointments & Recurring Slots</label>
                 <input
                   type="text"
                   value={formData.standingAppointments}
@@ -660,43 +815,60 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                 />
               </div>
+              <div className="text-xs">
+                <label className="font-semibold text-stone-700 block mb-1">Stylist Notes & Aesthetic Preferences</label>
+                <textarea
+                  rows={2}
+                  value={formData.notes}
+                  onChange={(e) => handleFieldChange('notes', e.target.value)}
+                  className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
+                />
+              </div>
+
+              {/* Custom Fields in Grooming Tab */}
+              <TabCustomFieldsSection category="Grooming" categoryLabel="Grooming & Aesthetics" />
             </div>
           )}
 
-          {/* 8. IMPORTANT DATES */}
+          {/* 8. DATES */}
           {activeSubTab === 'dates' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Calendar className="w-4 h-4 text-amber-700" /> Important Dates & Recurring Milestones
+                <Calendar className="w-4 h-4 text-amber-700" /> Important Dates, Anniversaries & Milestones
               </h3>
-              <div className="text-xs space-y-2">
-                <label className="font-semibold text-stone-700 block">Critical Dates List (One per line)</label>
+              <div className="text-xs">
+                <label className="font-semibold text-stone-700 block mb-1">Key Annual Dates & Recurring Milestones</label>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={formData.importantDatesText}
                   onChange={(e) => handleFieldChange('importantDatesText', e.target.value)}
-                  className="w-full p-3 rounded-xl border border-[#ECE6DD] font-mono"
+                  className="w-full p-2.5 rounded-xl border border-[#ECE6DD] font-mono"
                 />
-                <p className="text-[11px] text-stone-400">Format: Month Day: Event Name (Type)</p>
               </div>
+
+              {/* Custom Fields in Dates Tab */}
+              <TabCustomFieldsSection category="Dates" categoryLabel="Dates & Calendar" />
             </div>
           )}
 
-          {/* 9. SOCIAL RELATIONSHIPS */}
+          {/* 9. SOCIAL */}
           {activeSubTab === 'social' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Users className="w-4 h-4 text-sky-600" /> Social Relationships & VIP Stakeholders
+                <Users className="w-4 h-4 text-sky-600" /> Key Social Circles & VIP Stakeholders
               </h3>
-              <div className="text-xs space-y-2">
-                <label className="font-semibold text-stone-700 block">Key Contacts & Relationship Protocol</label>
+              <div className="text-xs">
+                <label className="font-semibold text-stone-700 block mb-1">VIP Stakeholders, Investors & Close Allies</label>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={formData.keyRelationshipsText}
                   onChange={(e) => handleFieldChange('keyRelationshipsText', e.target.value)}
-                  className="w-full p-3 rounded-xl border border-[#ECE6DD]"
+                  className="w-full p-2.5 rounded-xl border border-[#ECE6DD] font-mono"
                 />
               </div>
+
+              {/* Custom Fields in Social Tab */}
+              <TabCustomFieldsSection category="Social" categoryLabel="Social & VIP" />
             </div>
           )}
 
@@ -704,29 +876,32 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
           {activeSubTab === 'goals' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Target className="w-4 h-4 text-rose-700" /> Executive Goals & Strategic Objectives
+                <Target className="w-4 h-4 text-rose-700" /> Executive Goals & Quarterly Objectives
               </h3>
-              <div className="text-xs space-y-2">
-                <label className="font-semibold text-stone-700 block">Current Milestone Targets</label>
+              <div className="text-xs">
+                <label className="font-semibold text-stone-700 block mb-1">Active Executive Targets & High-Level Objectives</label>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={formData.goalsText}
                   onChange={(e) => handleFieldChange('goalsText', e.target.value)}
-                  className="w-full p-3 rounded-xl border border-[#ECE6DD]"
+                  className="w-full p-2.5 rounded-xl border border-[#ECE6DD] font-mono"
                 />
               </div>
+
+              {/* Custom Fields in Goals Tab */}
+              <TabCustomFieldsSection category="Goals" categoryLabel="Executive Goals" />
             </div>
           )}
 
-          {/* 11. HOBBIES & GIFTS */}
+          {/* 11. HOBBIES */}
           {activeSubTab === 'hobbies' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-pink-600" /> Hobbies, Interests & Gift Preferences
+                <Sparkles className="w-4 h-4 text-pink-600" /> Hobbies, Dining & Gifting Heuristics
               </h3>
-              <div className="space-y-3 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Personal Interests & Hobbies</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Leisure Interests & Sports</label>
                   <input
                     type="text"
                     value={formData.interests}
@@ -735,7 +910,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   />
                 </div>
                 <div>
-                  <label className="font-semibold text-stone-700 block mb-1">Favorite Restaurants & Spots</label>
+                  <label className="font-semibold text-stone-700 block mb-1">Favorite Restaurants & Chefs</label>
                   <input
                     type="text"
                     value={formData.favoriteRestaurants}
@@ -743,8 +918,8 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                     className="w-full p-2.5 rounded-xl border border-[#ECE6DD]"
                   />
                 </div>
-                <div>
-                  <label className="font-semibold text-stone-700 block mb-1">VIP Gift Ideas & Preferences</label>
+                <div className="sm:col-span-2">
+                  <label className="font-semibold text-stone-700 block mb-1">Gift Ideas & Preferred Tokens</label>
                   <input
                     type="text"
                     value={formData.giftPreferences}
@@ -753,6 +928,9 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   />
                 </div>
               </div>
+
+              {/* Custom Fields in Hobbies Tab */}
+              <TabCustomFieldsSection category="Hobbies" categoryLabel="Hobbies & Gifting" />
             </div>
           )}
 
@@ -800,15 +978,18 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   />
                 </div>
               </div>
+
+              {/* Custom Fields in Financial Tab */}
+              <TabCustomFieldsSection category="Financial" categoryLabel="Financial & Billing" />
             </div>
           )}
 
-          {/* 13. CUSTOM FIELDS */}
+          {/* 13. MASTER ALL CUSTOM FIELDS TAB */}
           {activeSubTab === 'custom' && (
             <div className="space-y-4">
               <h3 className="text-sm font-bold text-stone-900 border-b border-[#ECE6DD] pb-2 flex items-center justify-between">
                 <span className="flex items-center gap-2">
-                  <Sliders className="w-4 h-4 text-stone-800" /> Custom Fields & Tailored Metadata
+                  <Sliders className="w-4 h-4 text-stone-800" /> All Custom Fields Master Registry
                 </span>
                 <span className="text-xs text-stone-400 font-normal">{formData.customFields.length} custom fields configured</span>
               </h3>
@@ -825,7 +1006,7 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                     </span>
                     <button
                       onClick={() => handleDeleteCustomField(field.id)}
-                      className="text-stone-400 hover:text-rose-600 p-1"
+                      className="text-stone-400 hover:text-rose-600 p-1 cursor-pointer"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                     </button>
@@ -840,33 +1021,46 @@ export function ClientProfileExpanded({ client }: ClientProfileExpandedProps) {
                   <input
                     type="text"
                     placeholder="Field Name (e.g. Favorite Hotel Room)"
-                    value={newCustomLabel}
-                    onChange={(e) => setNewCustomLabel(e.target.value)}
+                    value={masterCustomLabel}
+                    onChange={(e) => setMasterCustomLabel(e.target.value)}
                     className="p-2 rounded-xl border border-[#ECE6DD] bg-white"
                   />
                   <input
                     type="text"
                     placeholder="Value (e.g. Suite 402)"
-                    value={newCustomValue}
-                    onChange={(e) => setNewCustomValue(e.target.value)}
+                    value={masterCustomValue}
+                    onChange={(e) => setMasterCustomValue(e.target.value)}
                     className="p-2 rounded-xl border border-[#ECE6DD] bg-white"
                   />
                   <select
-                    value={newCustomCategory}
-                    onChange={(e) => setNewCustomCategory(e.target.value)}
+                    value={masterCustomCategory}
+                    onChange={(e) => setMasterCustomCategory(e.target.value)}
                     className="p-2 rounded-xl border border-[#ECE6DD] bg-white"
                   >
                     <option value="Personal">Personal</option>
-                    <option value="Executive">Executive</option>
-                    <option value="Comms">Comms</option>
-                    <option value="Security">Security</option>
-                    <option value="VIP">VIP</option>
+                    <option value="Business">Business</option>
+                    <option value="Family">Family</option>
+                    <option value="Household">Household</option>
+                    <option value="Travel">Travel</option>
+                    <option value="Health">Health & Wellness</option>
+                    <option value="Grooming">Grooming & Stylist</option>
+                    <option value="Dates">Important Dates</option>
+                    <option value="Social">Social & VIP</option>
+                    <option value="Goals">Executive Goals</option>
+                    <option value="Hobbies">Hobbies & Gifts</option>
+                    <option value="Financial">Financial Settings</option>
+                    <option value="Custom">Custom Metadata</option>
                   </select>
                 </div>
                 <button
                   type="button"
-                  onClick={handleAddCustomField}
-                  className="px-4 py-2 bg-stone-900 text-white rounded-full font-bold flex items-center gap-1.5"
+                  onClick={() => {
+                    if (!masterCustomLabel.trim()) return;
+                    handleAddCustomField(masterCustomLabel, masterCustomValue, masterCustomCategory);
+                    setMasterCustomLabel('');
+                    setMasterCustomValue('');
+                  }}
+                  className="px-4 py-2 bg-stone-900 text-white rounded-full font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" /> Add Field
                 </button>

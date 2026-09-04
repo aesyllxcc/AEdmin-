@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, 
   Users, 
@@ -27,7 +27,17 @@ import {
   ChevronRight,
   Sparkles,
   Layers,
-  HardDrive
+  HardDrive,
+  Eye,
+  Download,
+  ArrowRight,
+  ShieldAlert,
+  Edit3,
+  Calendar,
+  BadgePercent,
+  CheckCheck,
+  XCircle,
+  Inbox
 } from 'lucide-react';
 import { useAuth } from '@/context/AuthContext';
 import { 
@@ -35,10 +45,25 @@ import {
   savePlatformSettings, 
   getWorkspacesRegistry, 
   getManualPaymentsLedger,
+  getAccessRequests,
+  calculateTenantStats,
   SUPER_ADMIN_EMAIL,
   SUPER_ADMIN_NAME
 } from '@/utils/workspaceManager';
-import { TenantPlanTier, ManualPaymentMethod, TenantWorkspace, ManualPaymentRecord, PlatformSettings } from '@/types/saas';
+import { 
+  TenantPlanTier, 
+  ManualPaymentMethod, 
+  TenantWorkspace, 
+  ManualPaymentRecord, 
+  PlatformSettings,
+  AccessRequest 
+} from '@/types/saas';
+import { TenantDetailsModal } from '@/components/admin/TenantDetailsModal';
+import { ChangePlanModal } from '@/components/admin/ChangePlanModal';
+import { RecordRenewalModal } from '@/components/admin/RecordRenewalModal';
+import { AccessRequestsList } from '@/components/admin/AccessRequestsList';
+import { AuditLogsViewer } from '@/components/admin/AuditLogsViewer';
+import { useNavigate } from 'react-router-dom';
 
 export default function PlatformAdmin() {
   const { 
@@ -47,22 +72,33 @@ export default function PlatformAdmin() {
     userAccounts, 
     provisionTenantAccount,
     updateTenantSubscriptionStatus,
+    updateTenantPlanTier,
     recordManualPaymentForTenant,
     resetTenantPasswordByAdmin,
     deleteTenantWorkspaceByAdmin,
+    setInspectedTenantId,
     auditLogs
   } = useAuth();
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'tenants' | 'provision' | 'payments' | 'settings'>('overview');
+  const navigate = useNavigate();
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'tenants' | 'requests' | 'provision' | 'payments' | 'settings' | 'audit'>('overview');
   const [platformSettings, setPlatformSettings] = useState<PlatformSettings>(() => getPlatformSettings());
   const [workspaces, setWorkspaces] = useState<TenantWorkspace[]>(() => getWorkspacesRegistry());
   const [payments, setPayments] = useState<ManualPaymentRecord[]>(() => getManualPaymentsLedger());
+  const [accessRequests, setAccessRequests] = useState<AccessRequest[]>(() => getAccessRequests());
 
-  // Search & Filter
+  // Search & Filters for Tenants
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'suspended'>('all');
+  const [planFilter, setPlanFilter] = useState<string>('all');
 
-  // Provision New Tenant Modal / State
+  // Search & Filters for Payments
+  const [paymentSearch, setPaymentSearch] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState<string>('all');
+  const [paymentCurrencyFilter, setPaymentCurrencyFilter] = useState<string>('all');
+
+  // Provisioning Form State
   const [provisionName, setProvisionName] = useState('');
   const [provisionEmail, setProvisionEmail] = useState('');
   const [provisionStudio, setProvisionStudio] = useState('');
@@ -76,28 +112,67 @@ export default function PlatformAdmin() {
   const [payCurrency, setPayCurrency] = useState<'USD' | 'PHP'>('USD');
   const [payMethod, setPayMethod] = useState<ManualPaymentMethod>('gcash');
   const [payRef, setPayRef] = useState('');
-  const [payPeriod, setPayPeriod] = useState<'monthly' | 'quarterly' | 'annual'>('monthly');
+  const [payPeriod, setPayPeriod] = useState<'monthly' | 'annual'>('monthly');
   const [payMonths, setPayMonths] = useState(1);
   const [payNotes, setPayNotes] = useState('');
-  
-  // Feedback
-  const [provisionResult, setProvisionResult] = useState<{ success: boolean; message: string; tempPassword?: string } | null>(null);
+  const [linkedRequestId, setLinkedRequestId] = useState<string | null>(null);
+
+  // Auto-calculate payAmount when plan, currency, or period changes
+  const updateProvisionAmount = (plan: TenantPlanTier, curr: 'USD' | 'PHP', period: 'monthly' | 'annual', months: number) => {
+    const pConfig = platformSettings.plans.find(p => p.id === plan);
+    if (!pConfig) return;
+    if (curr === 'PHP') {
+      const base = period === 'annual' ? Math.round(pConfig.monthlyPricePHP * 0.8 * 12) : pConfig.monthlyPricePHP * months;
+      setPayAmount(base);
+    } else {
+      const base = period === 'annual' ? Math.round(pConfig.monthlyPriceUSD * 0.8 * 12) : pConfig.monthlyPriceUSD * months;
+      setPayAmount(base);
+    }
+  };
+
+  const handlePlanChange = (newPlan: TenantPlanTier) => {
+    setProvisionPlan(newPlan);
+    updateProvisionAmount(newPlan, payCurrency, payPeriod, payMonths);
+  };
+
+  const handleCurrencyChange = (newCurr: 'USD' | 'PHP') => {
+    setPayCurrency(newCurr);
+    updateProvisionAmount(provisionPlan, newCurr, payPeriod, payMonths);
+  };
+
+  const handlePeriodChange = (newPeriod: 'monthly' | 'annual') => {
+    setPayPeriod(newPeriod);
+    const m = newPeriod === 'annual' ? 12 : 1;
+    setPayMonths(m);
+    updateProvisionAmount(provisionPlan, payCurrency, newPeriod, m);
+  };
+
+  // Feedback State
+  const [provisionResult, setProvisionResult] = useState<{ 
+    success: boolean; 
+    message: string; 
+    tempPassword?: string;
+    email?: string;
+    fullName?: string;
+    tenantId?: string;
+  } | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [copiedCredentials, setCopiedCredentials] = useState(false);
 
-  // Renewal Modal
-  const [renewalTenant, setRenewalTenant] = useState<TenantWorkspace | null>(null);
-  const [renewAmount, setRenewAmount] = useState(79);
-  const [renewCurrency, setRenewCurrency] = useState<'USD' | 'PHP'>('USD');
-  const [renewMethod, setRenewMethod] = useState<ManualPaymentMethod>('gcash');
-  const [renewRef, setRenewRef] = useState('');
-  const [renewMonths, setRenewMonths] = useState(1);
-  const [renewPeriod, setRenewPeriod] = useState<'monthly' | 'annual'>('monthly');
-
-  // Reset Password Modal
+  // Modals State
+  const [inspectModalWorkspace, setInspectModalWorkspace] = useState<TenantWorkspace | null>(null);
+  const [changePlanWorkspace, setChangePlanWorkspace] = useState<TenantWorkspace | null>(null);
+  const [renewalWorkspace, setRenewalWorkspace] = useState<TenantWorkspace | null>(null);
   const [resetUserResult, setResetUserResult] = useState<{ userName: string; tempPassword: string } | null>(null);
-
-  // Settings Feedback
   const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Reload all platform registry data
+  const reloadData = () => {
+    setWorkspaces(getWorkspacesRegistry());
+    setPayments(getManualPaymentsLedger());
+    setPlatformSettings(getPlatformSettings());
+    setAccessRequests(getAccessRequests());
+  };
 
   // Guard: Sole Owner / Super Admin Authorization Check
   if (!isSuperAdmin || currentUser?.email.toLowerCase() !== SUPER_ADMIN_EMAIL.toLowerCase()) {
@@ -118,23 +193,18 @@ export default function PlatformAdmin() {
     );
   }
 
-  // Refresh lists
-  const reloadData = () => {
-    setWorkspaces(getWorkspacesRegistry());
-    setPayments(getManualPaymentsLedger());
-    setPlatformSettings(getPlatformSettings());
-  };
-
-  // Handle Provisioning
+  // Handle Provisioning Submission
   const handleProvisionTenant = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!provisionName || !provisionEmail || !payRef) {
-      alert('Please enter user name, email, and payment reference number.');
+    if (!provisionName || !provisionEmail) {
+      alert('Please enter user full name and email address.');
       return;
     }
 
     setIsSubmitting(true);
     setProvisionResult(null);
+
+    const effectiveRef = payRef.trim() || `DIRECT-${Date.now().toString().slice(-6)}`;
 
     try {
       const res = await provisionTenantAccount({
@@ -146,27 +216,33 @@ export default function PlatformAdmin() {
         currency: provisionCurrency,
         hourlyRate: provisionHourlyRate,
         initialPayment: {
-          amount: payAmount,
+          amount: payAmount || 0,
           currency: payCurrency,
           method: payMethod,
-          referenceNumber: payRef,
+          referenceNumber: effectiveRef,
           billingPeriod: payPeriod,
           validMonths: payMonths,
-          notes: payNotes
+          notes: payNotes || (linkedRequestId ? `Provisioned from direct contact inquiry ${linkedRequestId}` : 'Direct onboarding verified by Platform Owner')
         }
       });
 
       if (res.success) {
         setProvisionResult({
           success: true,
-          message: res.message || 'Tenant workspace provisioned!',
-          tempPassword: res.tempPassword
+          message: res.message || 'Tenant workspace provisioned successfully!',
+          tempPassword: res.tempPassword,
+          email: provisionEmail,
+          fullName: provisionName,
+          tenantId: res.tenantId
         });
+
         // Reset form
         setProvisionName('');
         setProvisionEmail('');
         setProvisionStudio('');
         setPayRef('');
+        setPayNotes('');
+        setLinkedRequestId(null);
         reloadData();
       } else {
         setProvisionResult({
@@ -177,37 +253,42 @@ export default function PlatformAdmin() {
     } catch (err: any) {
       setProvisionResult({
         success: false,
-        message: err?.message || 'Unexpected provisioning error.'
+        message: err?.message || 'Unexpected error during provisioning.'
       });
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  // Handle 1-Click Approve & Pre-fill from Inbound Access Request
+  const handleApproveFromRequest = (req: AccessRequest) => {
+    setProvisionName(req.fullName);
+    setProvisionEmail(req.email);
+    setProvisionStudio(req.businessName);
+    setProvisionPlan(req.planId);
+    setPayCurrency(req.currency);
+    setPayPeriod(req.billingCycle);
+    setPayMethod(req.paymentMethod);
+    setPayRef(req.referenceNumber);
+    setPayAmount(req.amount);
+    setPayMonths(req.billingCycle === 'annual' ? 12 : 1);
+    setPayNotes(`Approved from Access Request #${req.id}. ${req.notes || ''}`);
+    setLinkedRequestId(req.id);
+    setActiveTab('provision');
+  };
+
+  // Handle Plan Change
+  const handleConfirmChangePlan = (tenantId: string, newPlanTier: TenantPlanTier) => {
+    const res = updateTenantPlanTier(tenantId, newPlanTier);
+    alert(res.message);
+    reloadData();
+  };
+
   // Handle Renewal Recording
-  const handleRecordRenewal = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!renewalTenant || !renewRef) return;
-
-    const res = recordManualPaymentForTenant({
-      tenantId: renewalTenant.id,
-      amount: renewAmount,
-      currency: renewCurrency,
-      paymentMethod: renewMethod,
-      referenceNumber: renewRef,
-      billingPeriod: renewPeriod,
-      validMonths: renewMonths,
-      notes: `Subscription renewal processed by ${SUPER_ADMIN_NAME}`
-    });
-
-    if (res.success) {
-      alert(res.message);
-      setRenewalTenant(null);
-      setRenewRef('');
-      reloadData();
-    } else {
-      alert(res.message);
-    }
+  const handleConfirmRenewal = (paymentData: any) => {
+    const res = recordManualPaymentForTenant(paymentData);
+    alert(res.message);
+    reloadData();
   };
 
   // Handle Password Reset by Admin
@@ -223,6 +304,19 @@ export default function PlatformAdmin() {
     }
   };
 
+  // Handle Suspend / Reactivate with Immediate State Reload
+  const handleToggleSubscriptionStatus = (tenantId: string, currentStatus: string, name: string) => {
+    const nextStatus = currentStatus === 'active' ? 'suspended' : 'active';
+    const reason = prompt(
+      `Enter reason for ${nextStatus === 'suspended' ? 'suspending' : 'reactivating'} workspace for "${name}":`,
+      nextStatus === 'suspended' ? 'Subscription expired or non-payment' : 'Payment verified / renewed'
+    );
+    if (reason === null) return;
+
+    updateTenantSubscriptionStatus(tenantId, nextStatus as any, reason);
+    reloadData();
+  };
+
   // Handle Delete Workspace
   const handleDeleteWorkspace = (tenantId: string, userId: string, name: string) => {
     if (!confirm(`Are you sure you want to permanently delete the workspace for "${name}"? This action cannot be undone and will erase all isolated data.`)) return;
@@ -236,31 +330,87 @@ export default function PlatformAdmin() {
     }
   };
 
+  // Handle Impersonation / View-As Mode
+  const handleInspectWorkspace = (tenantId: string) => {
+    setInspectedTenantId(tenantId);
+    navigate('/');
+  };
+
+  // Handle Export Payment Ledger to CSV
+  const handleExportPaymentLedgerCSV = () => {
+    const headers = ['Record ID', 'Tenant ID', 'User Name', 'Email', 'Studio', 'Plan', 'Amount', 'Currency', 'Payment Method', 'Reference Number', 'Billing Period', 'Verified Date', 'Expires Date', 'Status'];
+    const rows = payments.map(p => [
+      p.id,
+      p.tenantId,
+      `"${p.userName.replace(/"/g, '""')}"`,
+      p.userEmail,
+      `"${p.businessName.replace(/"/g, '""')}"`,
+      p.planTier,
+      p.amount,
+      p.currency,
+      p.paymentMethod,
+      p.referenceNumber,
+      p.billingPeriod,
+      p.verifiedAt,
+      p.periodEndDate,
+      p.status
+    ]);
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `aedmin_payment_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Handle Save Settings
   const handleSaveSettings = (e: React.FormEvent) => {
     e.preventDefault();
     savePlatformSettings(platformSettings);
     setSettingsSaved(true);
-    setTimeout(() => setSettingsSaved(false), 3000);
+    setTimeout(() => setSettingsSaved(false), 3500);
   };
 
   // Metrics Calculations
   const totalWorkspaces = workspaces.length;
   const activeWorkspaces = workspaces.filter(w => w.status === 'active').length;
-  const totalVerifiedPayments = payments.filter(p => p.status === 'verified');
-  const totalRevenuePHP = totalVerifiedPayments
+  const suspendedWorkspaces = workspaces.filter(w => w.status === 'suspended').length;
+  const pendingRequestsCount = accessRequests.filter(r => r.status === 'pending').length;
+
+  const verifiedPayments = payments.filter(p => p.status === 'verified');
+  const totalRevenuePHP = verifiedPayments
     .filter(p => p.currency === 'PHP')
     .reduce((sum, p) => sum + p.amount, 0);
-  const totalRevenueUSD = totalVerifiedPayments
+  const totalRevenueUSD = verifiedPayments
     .filter(p => p.currency === 'USD')
     .reduce((sum, p) => sum + p.amount, 0);
 
+  // Filtered Workspaces
   const filteredWorkspaces = workspaces.filter(ws => {
-    const matchesSearch = ws.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                          ws.ownerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          ws.ownerFullName.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesSearch = 
+      ws.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+      ws.ownerEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ws.ownerFullName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ws.id.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === 'all' ? true : ws.status === statusFilter;
-    return matchesSearch && matchesStatus;
+    const matchesPlan = planFilter === 'all' ? true : ws.plan === planFilter;
+    return matchesSearch && matchesStatus && matchesPlan;
+  });
+
+  // Filtered Payments
+  const filteredPayments = payments.filter(p => {
+    const matchesSearch = 
+      p.referenceNumber.toLowerCase().includes(paymentSearch.toLowerCase()) ||
+      p.userName.toLowerCase().includes(paymentSearch.toLowerCase()) ||
+      p.userEmail.toLowerCase().includes(paymentSearch.toLowerCase()) ||
+      p.businessName.toLowerCase().includes(paymentSearch.toLowerCase());
+    const matchesMethod = paymentMethodFilter === 'all' ? true : p.paymentMethod === paymentMethodFilter;
+    const matchesCurr = paymentCurrencyFilter === 'all' ? true : p.currency === paymentCurrencyFilter;
+    return matchesSearch && matchesMethod && matchesCurr;
   });
 
   return (
@@ -272,21 +422,30 @@ export default function PlatformAdmin() {
           <div className="space-y-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur-md rounded-full text-xs font-bold text-amber-300 border border-white/10">
               <ShieldCheck className="w-4 h-4" />
-              <span>Platform Owner & Sole Super Administrator</span>
+              <span>Platform Owner & Master Super Administrator</span>
             </div>
             <h1 className="text-2xl sm:text-4xl font-black tracking-tight text-white">
-              Platform Administration & SaaS Control
+              Platform Administration Hub
             </h1>
             <p className="text-xs sm:text-sm text-stone-300 max-w-2xl leading-relaxed">
-              Authorized to <span className="text-white font-bold">{SUPER_ADMIN_NAME}</span>. Manage isolated tenant workspaces, verify manual payments across GCash, Maya, Bank Transfer, and Wise, and provision new client accounts.
+              Authorized to <span className="text-white font-bold">{SUPER_ADMIN_NAME}</span>. Oversee multi-tenant workspaces, approve inbound access requests, record manual payments across GCash, Maya, Bank Transfer, PayPal, and Wise, and inspect tenant workspaces live.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveTab('requests')}
+              className="px-4 py-3 bg-amber-400 text-stone-950 hover:bg-amber-300 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+            >
+              <Inbox className="w-4 h-4" />
+              <span>Access Requests {pendingRequestsCount > 0 && `(${pendingRequestsCount})`}</span>
+            </button>
+
             <button
               type="button"
               onClick={() => setActiveTab('provision')}
-              className="px-5 py-3.5 bg-white text-[#18191D] hover:bg-stone-100 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
+              className="px-4 py-3 bg-white text-[#18191D] hover:bg-stone-100 rounded-2xl text-xs font-bold flex items-center gap-2 shadow-lg transition-transform active:scale-95 cursor-pointer"
             >
               <Plus className="w-4 h-4" />
               <span>Provision New Tenant</span>
@@ -300,9 +459,11 @@ export default function PlatformAdmin() {
         {[
           { id: 'overview', label: 'Platform Overview', icon: TrendingUp },
           { id: 'tenants', label: `Workspaces & Users (${totalWorkspaces})`, icon: Users },
+          { id: 'requests', label: `Access Requests (${pendingRequestsCount} Pending)`, icon: Inbox, badge: pendingRequestsCount },
           { id: 'provision', label: 'Provision Tenant', icon: Plus },
           { id: 'payments', label: `Payment Ledger (${payments.length})`, icon: CreditCard },
           { id: 'settings', label: 'Platform & Payment Settings', icon: Settings },
+          { id: 'audit', label: 'System Logs', icon: FileText }
         ].map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -348,647 +509,859 @@ export default function PlatformAdmin() {
                 <Smartphone className="w-4 h-4 text-blue-600" />
               </div>
               <div className="text-3xl font-black text-[#18191D]">₱{totalRevenuePHP.toLocaleString()}</div>
-              <p className="text-xs text-stone-500">GCash, Maya & BDO Bank</p>
+              <p className="text-xs text-stone-500 font-medium">
+                Verified via GCash, Maya & BDO
+              </p>
             </div>
 
             <div className="bg-white p-6 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-2">
               <div className="flex items-center justify-between text-stone-500">
                 <span className="text-xs font-bold uppercase tracking-wider">Revenue (USD)</span>
-                <DollarSign className="w-4 h-4 text-emerald-600" />
+                <Globe className="w-4 h-4 text-emerald-600" />
               </div>
               <div className="text-3xl font-black text-[#18191D]">${totalRevenueUSD.toLocaleString()}</div>
-              <p className="text-xs text-stone-500">PayPal & Wise International</p>
+              <p className="text-xs text-stone-500 font-medium">
+                Verified via PayPal & Wise
+              </p>
             </div>
 
             <div className="bg-white p-6 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-2">
               <div className="flex items-center justify-between text-stone-500">
-                <span className="text-xs font-bold uppercase tracking-wider">Isolation Engine</span>
-                <HardDrive className="w-4 h-4 text-purple-600" />
+                <span className="text-xs font-bold uppercase tracking-wider">Pending Access</span>
+                <Inbox className="w-4 h-4 text-amber-600" />
               </div>
-              <div className="text-3xl font-black text-emerald-600">100%</div>
-              <p className="text-xs text-stone-500">Zero Cross-Tenant Leakage</p>
+              <div className="text-3xl font-black text-amber-600">{pendingRequestsCount}</div>
+              <p className="text-xs text-amber-800 font-medium">
+                {pendingRequestsCount > 0 ? 'Awaiting payment approval' : 'All applications handled'}
+              </p>
             </div>
-
           </div>
 
-          {/* Quick Workspaces Snapshot & Recent Payments */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            
-            {/* Workspaces Snapshot */}
-            <div className="bg-white p-6 rounded-3xl border border-[#ECE6DD] space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-black text-[#18191D] flex items-center gap-2">
-                  <Layers className="w-4 h-4" />
-                  <span>Provisioned Workspaces</span>
+          {/* Quick Inspection & Jump Area */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-lg font-black text-stone-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  Live Workspace Inspection Mode
                 </h3>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('tenants')}
-                  className="text-xs font-bold text-stone-600 hover:text-black flex items-center gap-1"
-                >
-                  <span>View All</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {workspaces.map((ws) => (
-                  <div key={ws.id} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] flex items-center justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-[#18191D]">{ws.name}</span>
-                        {ws.isSuperAdminWorkspace && (
-                          <span className="px-2 py-0.5 bg-black text-white text-[9px] font-black rounded-full">
-                            Owner
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-stone-500">{ws.ownerEmail} • Plan: {ws.subscription?.planName || ws.plan}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                        ws.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                      }`}>
-                        {ws.status.toUpperCase()}
-                      </span>
-                      <span className="text-[10px] text-stone-400 block mt-1">
-                        Renews: {new Date(ws.subscription?.currentPeriodEnd || ws.createdAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+                <p className="text-xs text-stone-500 mt-0.5">
+                  As the Master Super Admin, you can switch into any tenant's isolated environment to inspect their clients, tasks, and setup.
+                </p>
               </div>
             </div>
 
-            {/* Recent Manual Payment Verifications */}
-            <div className="bg-white p-6 rounded-3xl border border-[#ECE6DD] space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-base font-black text-[#18191D] flex items-center gap-2">
-                  <CreditCard className="w-4 h-4" />
-                  <span>Recent Manual Payments</span>
-                </h3>
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('payments')}
-                  className="text-xs font-bold text-stone-600 hover:text-black flex items-center gap-1"
-                >
-                  <span>Full Ledger</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              <div className="space-y-3">
-                {payments.slice(0, 4).map((pay) => (
-                  <div key={pay.id} className="p-4 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] flex items-center justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-[#18191D]">{pay.userName}</span>
-                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-stone-200 text-stone-800 rounded-md">
-                          {pay.paymentMethod}
-                        </span>
-                      </div>
-                      <p className="text-[11px] font-mono text-stone-500">Ref: {pay.referenceNumber}</p>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-sm font-black text-emerald-800">
-                        {pay.currency} {pay.amount.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] text-stone-400 block mt-0.5">
-                        Verified {new Date(pay.verifiedAt).toLocaleDateString()}
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-
-        </div>
-      )}
-
-      {/* TAB 2: TENANTS & WORKSPACES DIRECTORY */}
-      {activeTab === 'tenants' && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] space-y-6">
-          
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h2 className="text-xl font-black text-[#18191D]">Tenant Workspaces Directory</h2>
-              <p className="text-xs text-stone-500">Manage private isolated workspaces, passwords, subscriptions, and status.</p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="w-4 h-4 text-stone-400 absolute left-3 top-3" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={e => setSearchQuery(e.target.value)}
-                  placeholder="Search tenants..."
-                  className="pl-9 pr-4 py-2.5 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-black"
-                />
-              </div>
-
-              <select
-                value={statusFilter}
-                onChange={e => setStatusFilter(e.target.value as any)}
-                className="py-2.5 px-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] text-xs font-semibold focus:outline-none"
-              >
-                <option value="all">All Statuses</option>
-                <option value="active">Active</option>
-                <option value="suspended">Suspended</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Tenants Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-[#ECE6DD] text-stone-500 font-bold">
-                  <th className="pb-3 px-3">Workspace & Operator</th>
-                  <th className="pb-3 px-3">Plan Tier</th>
-                  <th className="pb-3 px-3">Status</th>
-                  <th className="pb-3 px-3">Subscription End</th>
-                  <th className="pb-3 px-3">Payment Ref</th>
-                  <th className="pb-3 px-3 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#ECE6DD]/60">
-                {filteredWorkspaces.map((ws) => {
-                  const associatedUser = userAccounts.find(u => u.tenantId === ws.id || u.id === ws.ownerUserId);
-                  return (
-                    <tr key={ws.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                      
-                      {/* Name & Email */}
-                      <td className="py-4 px-3">
-                        <div className="font-bold text-stone-900 text-sm">{ws.name}</div>
-                        <div className="text-stone-500 text-[11px] flex items-center gap-1.5 mt-0.5">
-                          <Mail className="w-3 h-3" />
-                          <span>{ws.ownerEmail}</span>
-                          <span className="text-stone-300">•</span>
-                          <span>ID: {ws.id}</span>
-                        </div>
-                      </td>
-
-                      {/* Plan */}
-                      <td className="py-4 px-3">
-                        <span className="px-2.5 py-1 bg-stone-100 rounded-lg font-bold text-stone-800 text-[11px]">
-                          {ws.subscription?.planName || ws.plan}
-                        </span>
-                      </td>
-
-                      {/* Status */}
-                      <td className="py-4 px-3">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                          ws.status === 'active' ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
-                        }`}>
-                          {ws.status.toUpperCase()}
-                        </span>
-                      </td>
-
-                      {/* Renewal Date */}
-                      <td className="py-4 px-3 text-stone-700 font-semibold">
-                        {new Date(ws.subscription?.currentPeriodEnd || ws.createdAt).toLocaleDateString()}
-                      </td>
-
-                      {/* Payment Ref */}
-                      <td className="py-4 px-3 font-mono text-[11px] text-stone-600">
-                        {ws.subscription?.lastPaymentReference || '—'}
-                      </td>
-
-                      {/* Actions */}
-                      <td className="py-4 px-3 text-right space-x-2">
-                        {!ws.isSuperAdminWorkspace && (
-                          <>
-                            {/* Record Renewal Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setRenewalTenant(ws);
-                                setRenewAmount(ws.subscription?.price || 79);
-                                setRenewCurrency((ws.subscription?.currency as any) || 'USD');
-                              }}
-                              className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg font-bold text-[11px] border border-emerald-200 transition-colors"
-                              title="Record Renewal Payment"
-                            >
-                              + Record Renewal
-                            </button>
-
-                            {/* Reset Temp Password */}
-                            {associatedUser && (
-                              <button
-                                type="button"
-                                onClick={() => handleResetPassword(associatedUser.id, associatedUser.fullName)}
-                                className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg font-bold text-[11px] border border-amber-200 transition-colors"
-                                title="Issue Temporary Password"
-                              >
-                                Reset Pass
-                              </button>
-                            )}
-
-                            {/* Toggle Suspend */}
-                            <button
-                              type="button"
-                              onClick={() => updateTenantSubscriptionStatus(
-                                ws.id, 
-                                ws.status === 'active' ? 'suspended' : 'active',
-                                ws.status === 'active' ? 'Suspended by Owner' : 'Reactivated by Owner'
-                              )}
-                              className="px-2.5 py-1.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg font-bold text-[11px] transition-colors"
-                            >
-                              {ws.status === 'active' ? 'Suspend' : 'Reactivate'}
-                            </button>
-
-                            {/* Delete Workspace */}
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteWorkspace(ws.id, ws.ownerUserId, ws.name)}
-                              className="p-1.5 text-stone-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors inline-block align-middle"
-                              title="Delete Workspace"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </>
-                        )}
-                        {ws.isSuperAdminWorkspace && (
-                          <span className="text-[11px] font-bold text-stone-400 italic">
-                            Master Owner
-                          </span>
-                        )}
-                      </td>
-
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-        </div>
-      )}
-
-      {/* TAB 3: PROVISION NEW TENANT */}
-      {activeTab === 'provision' && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] max-w-4xl space-y-6">
-          <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 bg-stone-100 rounded-full text-xs font-bold text-stone-700 mb-2">
-              <Plus className="w-3.5 h-3.5" />
-              <span>Manual Account Provisioning Pipeline</span>
-            </div>
-            <h2 className="text-2xl font-black text-[#18191D]">Provision New Tenant Workspace</h2>
-            <p className="text-xs text-stone-500 mt-1">
-              Creates a private, isolated workspace for the user, sets initial temporary credentials with mandatory first-login password change, and records their verified manual payment.
-            </p>
-          </div>
-
-          {provisionResult && (
-            <div className={`p-4 rounded-2xl border flex items-start gap-3 text-xs ${
-              provisionResult.success 
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
-                : 'bg-rose-50 border-rose-200 text-rose-900'
-            }`}>
-              {provisionResult.success ? <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" /> : <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />}
-              <div className="space-y-1">
-                <p className="font-bold">{provisionResult.message}</p>
-                {provisionResult.tempPassword && (
-                  <div className="p-3 bg-white rounded-xl border border-emerald-200 mt-2">
-                    <span className="text-[11px] font-bold text-stone-600 block">Temporary Password for User:</span>
-                    <div className="flex items-center gap-2 mt-1">
-                      <span className="font-mono text-base font-black text-[#18191D]">{provisionResult.tempPassword}</span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(provisionResult.tempPassword!);
-                          alert('Temporary password copied to clipboard!');
-                        }}
-                        className="px-2.5 py-1 bg-stone-100 rounded-lg text-xs font-bold text-stone-700 hover:bg-stone-200"
-                      >
-                        Copy Password
-                      </button>
-                    </div>
-                    <p className="text-[10px] text-stone-500 mt-1">
-                      Send this credential to the user. The system will prompt them to set their permanent password immediately upon login.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          <form onSubmit={handleProvisionTenant} className="space-y-6">
-            
-            {/* Section 1: User & Workspace Details */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-black text-stone-900 uppercase tracking-wider flex items-center gap-2 border-b border-[#ECE6DD] pb-2">
-                <Users className="w-4 h-4" />
-                <span>1. User & Workspace Profile</span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    User Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={provisionName}
-                    onChange={e => setProvisionName(e.target.value)}
-                    placeholder="e.g., Sarah Jenkins"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] focus:ring-2 focus:ring-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    User Email (Login Username) *
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={provisionEmail}
-                    onChange={e => setProvisionEmail(e.target.value)}
-                    placeholder="sarah@jenkinsops.com"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] focus:ring-2 focus:ring-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Studio / Business Name
-                  </label>
-                  <input
-                    type="text"
-                    value={provisionStudio}
-                    onChange={e => setProvisionStudio(e.target.value)}
-                    placeholder="Sarah Jenkins Executive Support"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] focus:ring-2 focus:ring-black"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Subscription Plan Tier *
-                  </label>
-                  <select
-                    value={provisionPlan}
-                    onChange={e => setProvisionPlan(e.target.value as any)}
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] focus:ring-2 focus:ring-black"
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 pt-2">
+              {workspaces.map(ws => {
+                const stats = calculateTenantStats(ws.id);
+                return (
+                  <div
+                    key={ws.id}
+                    className="p-4 rounded-2xl border border-[#ECE6DD] hover:border-stone-400 bg-stone-50/50 hover:bg-stone-50 transition-all flex items-center justify-between"
                   >
-                    <option value="starter_freelance">Freelance Starter ($39 / ₱1,990 mo)</option>
-                    <option value="pro_executive">Executive Pro ($79 / ₱3,990 mo)</option>
-                    <option value="agency_studio">Agency & Studio ($149 / ₱7,490 mo)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Operating Timezone
-                  </label>
-                  <input
-                    type="text"
-                    value={provisionTimezone}
-                    onChange={e => setProvisionTimezone(e.target.value)}
-                    placeholder="Asia/Manila or America/New_York"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Hourly Rate & Currency
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={provisionCurrency}
-                      onChange={e => setProvisionCurrency(e.target.value)}
-                      className="w-16 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD] text-center"
-                    />
-                    <input
-                      type="number"
-                      value={provisionHourlyRate}
-                      onChange={e => setProvisionHourlyRate(Number(e.target.value))}
-                      className="flex-1 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 2: Verified Manual Payment Details */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-black text-stone-900 uppercase tracking-wider flex items-center gap-2 border-b border-[#ECE6DD] pb-2">
-                <CreditCard className="w-4 h-4" />
-                <span>2. Verified Manual Payment Ledger Entry</span>
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Payment Method *
-                  </label>
-                  <select
-                    value={payMethod}
-                    onChange={e => setPayMethod(e.target.value as any)}
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  >
-                    <option value="gcash">GCash (PH)</option>
-                    <option value="maya">Maya (PH)</option>
-                    <option value="bank_transfer">Bank Transfer (BDO)</option>
-                    <option value="paypal">PayPal</option>
-                    <option value="wise">Wise</option>
-                    <option value="cash_other">Other / Direct Cash</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Amount & Currency *
-                  </label>
-                  <div className="flex gap-2">
-                    <select
-                      value={payCurrency}
-                      onChange={e => setPayCurrency(e.target.value as any)}
-                      className="w-20 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
+                    <div className="space-y-0.5">
+                      <div className="font-bold text-xs text-stone-900">{ws.name}</div>
+                      <div className="text-[11px] text-stone-500">{ws.ownerFullName} · {stats.clientCount} Clients</div>
+                    </div>
+                    <button
+                      onClick={() => handleInspectWorkspace(ws.id)}
+                      className="px-3 py-1.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition-all"
                     >
-                      <option value="USD">USD</option>
-                      <option value="PHP">PHP</option>
-                    </select>
-                    <input
-                      type="number"
-                      required
-                      value={payAmount}
-                      onChange={e => setPayAmount(Number(e.target.value))}
-                      className="flex-1 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                    />
+                      <Eye className="w-3 h-3 text-amber-400" />
+                      <span>Inspect</span>
+                    </button>
                   </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Transaction Reference Number *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={payRef}
-                    onChange={e => setPayRef(e.target.value)}
-                    placeholder="e.g., GCASH-9821049281"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Billing Cycle
-                  </label>
-                  <select
-                    value={payPeriod}
-                    onChange={e => setPayPeriod(e.target.value as any)}
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  >
-                    <option value="monthly">Monthly</option>
-                    <option value="quarterly">Quarterly</option>
-                    <option value="annual">Annual</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Valid Duration (Months)
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={36}
-                    value={payMonths}
-                    onChange={e => setPayMonths(Number(e.target.value))}
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 mb-1">
-                    Verification Notes
-                  </label>
-                  <input
-                    type="text"
-                    value={payNotes}
-                    onChange={e => setPayNotes(e.target.value)}
-                    placeholder="e.g., Verified in GCash inbox"
-                    className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  />
-                </div>
-              </div>
+                );
+              })}
             </div>
+          </div>
 
-            <div className="pt-4 border-t border-[#ECE6DD]">
+          {/* Recent Payments Preview */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-black text-stone-900 flex items-center gap-2">
+                <CreditCard className="w-5 h-5 text-stone-700" />
+                Recent Verified Manual Payments
+              </h3>
               <button
-                type="submit"
-                disabled={isSubmitting}
-                className="w-full sm:w-auto px-8 py-4 bg-[#18191D] hover:bg-black text-white rounded-2xl text-xs font-bold flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer"
+                onClick={() => setActiveTab('payments')}
+                className="text-xs font-bold text-stone-700 hover:text-stone-900 flex items-center gap-1"
               >
-                {isSubmitting ? (
-                  <span>Provisioning Isolated Workspace...</span>
-                ) : (
-                  <>
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>Confirm Payment & Provision Tenant Workspace</span>
-                  </>
-                )}
+                View Full Ledger <ArrowRight className="w-3.5 h-3.5" />
               </button>
             </div>
 
-          </form>
+            <div className="border border-[#ECE6DD] rounded-2xl overflow-hidden divide-y divide-[#ECE6DD] text-xs">
+              {payments.slice(0, 4).map(p => (
+                <div key={p.id} className="p-4 flex flex-wrap items-center justify-between gap-3 hover:bg-stone-50">
+                  <div>
+                    <div className="font-bold text-stone-900 flex items-center gap-2">
+                      <span>{p.userName} ({p.businessName})</span>
+                      <span className="px-2 py-0.5 bg-stone-100 text-stone-700 rounded text-[10px] font-bold uppercase">
+                        {p.paymentMethod}
+                      </span>
+                    </div>
+                    <div className="text-stone-500 text-[11px] font-mono mt-0.5">
+                      Ref: {p.referenceNumber} · Plan: {p.planTier}
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="font-black text-stone-900">{p.currency} {p.amount.toLocaleString()}</div>
+                    <div className="text-[11px] text-emerald-700 font-semibold">
+                      Verified on {new Date(p.verifiedAt).toLocaleDateString()}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
         </div>
       )}
 
-      {/* TAB 4: MANUAL PAYMENTS LEDGER */}
-      {activeTab === 'payments' && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] space-y-6">
-          <div>
-            <h2 className="text-xl font-black text-[#18191D]">Manual Payments & Verification Audit Ledger</h2>
-            <p className="text-xs text-stone-500">Historical records of all GCash, Maya, Bank Transfer, PayPal, and Wise transactions.</p>
+      {/* TAB 2: WORKSPACES & USERS DIRECTORY */}
+      {activeTab === 'tenants' && (
+        <div className="space-y-6">
+          
+          {/* Controls Bar */}
+          <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#ECE6DD] shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            
+            {/* Search */}
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                placeholder="Search by workspace, owner name, email, or tenant ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-[#ECE6DD] rounded-2xl text-xs font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+              />
+            </div>
+
+            {/* Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value as any)}
+                className="px-3.5 py-2.5 bg-white border border-[#ECE6DD] rounded-2xl text-xs font-bold text-stone-700 focus:outline-hidden"
+              >
+                <option value="all">All Statuses</option>
+                <option value="active">Active Only</option>
+                <option value="suspended">Suspended Only</option>
+              </select>
+
+              <select
+                value={planFilter}
+                onChange={(e) => setPlanFilter(e.target.value)}
+                className="px-3.5 py-2.5 bg-white border border-[#ECE6DD] rounded-2xl text-xs font-bold text-stone-700 focus:outline-hidden"
+              >
+                <option value="all">All Plans</option>
+                <option value="starter_freelance">Freelance Starter</option>
+                <option value="pro_executive">Executive Pro</option>
+                <option value="agency_studio">Agency & Studio</option>
+              </select>
+
+              <button
+                onClick={reloadData}
+                className="p-2.5 bg-stone-50 hover:bg-stone-100 border border-[#ECE6DD] rounded-2xl text-stone-700"
+                title="Reload directory"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-[#ECE6DD] text-stone-500 font-bold">
-                  <th className="pb-3 px-3">Date & User</th>
-                  <th className="pb-3 px-3">Method</th>
-                  <th className="pb-3 px-3">Reference Number</th>
-                  <th className="pb-3 px-3">Amount</th>
-                  <th className="pb-3 px-3">Period</th>
-                  <th className="pb-3 px-3">Verified By</th>
-                  <th className="pb-3 px-3 text-right">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[#ECE6DD]/60">
-                {payments.map((pay) => (
-                  <tr key={pay.id} className="hover:bg-[#FAF8F5]/80 transition-colors">
-                    <td className="py-3.5 px-3">
-                      <div className="font-bold text-stone-900">{pay.userName}</div>
-                      <div className="text-stone-500 text-[11px]">{pay.userEmail}</div>
-                    </td>
-                    <td className="py-3.5 px-3">
-                      <span className="px-2.5 py-1 bg-stone-100 rounded-lg font-bold text-stone-800 text-[11px] uppercase">
-                        {pay.paymentMethod}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-3 font-mono font-bold text-stone-800">
-                      {pay.referenceNumber}
-                    </td>
-                    <td className="py-3.5 px-3 font-black text-emerald-800">
-                      {pay.currency} {pay.amount.toLocaleString()}
-                    </td>
-                    <td className="py-3.5 px-3 text-stone-600 font-medium">
-                      {new Date(pay.periodStartDate).toLocaleDateString()} – {new Date(pay.periodEndDate).toLocaleDateString()}
-                    </td>
-                    <td className="py-3.5 px-3 text-stone-600">
-                      {pay.verifiedBy}
-                    </td>
-                    <td className="py-3.5 px-3 text-right">
-                      <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-[10px] font-bold">
-                        VERIFIED
-                      </span>
-                    </td>
+          {/* Tenants Directory Table */}
+          <div className="bg-white rounded-3xl border border-[#ECE6DD] shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 border-b border-[#ECE6DD] text-stone-500 uppercase tracking-wider font-bold text-[10px]">
+                  <tr>
+                    <th className="px-6 py-4">Workspace & Owner</th>
+                    <th className="px-4 py-4">Plan & Entitlements</th>
+                    <th className="px-4 py-4">Usage & Storage</th>
+                    <th className="px-4 py-4">Subscription Period</th>
+                    <th className="px-4 py-4">Status</th>
+                    <th className="px-6 py-4 text-right">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-[#ECE6DD] font-medium text-stone-900">
+                  {filteredWorkspaces.map(ws => {
+                    const stats = calculateTenantStats(ws.id);
+                    const isOwner = ws.id === 'ws_ellysa_owner';
+                    const isActive = ws.status === 'active';
+
+                    return (
+                      <tr key={ws.id} className="hover:bg-stone-50/70 transition-colors">
+                        
+                        {/* Workspace & Owner */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-2xl bg-stone-900 text-amber-400 flex items-center justify-center font-bold text-sm shadow-xs shrink-0">
+                              {ws.name.substring(0, 2).toUpperCase()}
+                            </div>
+                            <div className="space-y-0.5">
+                              <div className="font-black text-stone-900 text-sm flex items-center gap-1.5">
+                                <span>{ws.name}</span>
+                                {isOwner && (
+                                  <span className="px-1.5 py-0.2 bg-amber-100 text-amber-900 rounded text-[9px] font-black uppercase">
+                                    Master
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-stone-500 text-xs">
+                                {ws.ownerFullName} · <span className="font-mono">{ws.ownerEmail}</span>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Plan */}
+                        <td className="px-4 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold capitalize ${
+                            ws.plan === 'agency_studio' ? 'bg-purple-100 text-purple-800' :
+                            ws.plan === 'pro_executive' ? 'bg-amber-100 text-amber-800' :
+                            'bg-stone-100 text-stone-700'
+                          }`}>
+                            {ws.subscription?.planName || ws.plan}
+                          </span>
+                        </td>
+
+                        {/* Resource Stats */}
+                        <td className="px-4 py-4">
+                          <div className="space-y-0.5">
+                            <div className="font-semibold text-stone-800">
+                              {stats.clientCount} Clients · {stats.taskCount} Tasks
+                            </div>
+                            <div className="text-[11px] text-stone-500 font-mono">
+                              Storage: {stats.storageUsedKB} KB
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Subscription Period */}
+                        <td className="px-4 py-4">
+                          <div className="space-y-0.5">
+                            <div className="font-bold text-stone-800">
+                              {ws.subscription?.currentPeriodEnd 
+                                ? new Date(ws.subscription.currentPeriodEnd).toLocaleDateString()
+                                : 'Perpetual'}
+                            </div>
+                            <div className="text-[11px] text-stone-400 font-mono">
+                              Ref: {ws.subscription?.lastPaymentReference || 'DIRECT'}
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Status */}
+                        <td className="px-4 py-4">
+                          <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 w-fit ${
+                            isActive ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                          }`}>
+                            <span>●</span> {isActive ? 'Active' : 'Suspended'}
+                          </span>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1.5">
+                            
+                            {/* Inspect Live */}
+                            <button
+                              onClick={() => handleInspectWorkspace(ws.id)}
+                              className="p-2 text-stone-600 hover:text-stone-950 hover:bg-stone-100 rounded-xl transition-all"
+                              title="Inspect Workspace Live"
+                            >
+                              <Eye className="w-4 h-4" />
+                            </button>
+
+                            {/* View Dossier */}
+                            <button
+                              onClick={() => setInspectModalWorkspace(ws)}
+                              className="p-2 text-stone-600 hover:text-stone-950 hover:bg-stone-100 rounded-xl transition-all"
+                              title="View Details & Storage"
+                            >
+                              <FileText className="w-4 h-4" />
+                            </button>
+
+                            {/* Change Plan */}
+                            <button
+                              onClick={() => setChangePlanWorkspace(ws)}
+                              className="p-2 text-stone-600 hover:text-stone-950 hover:bg-stone-100 rounded-xl transition-all"
+                              title="Upgrade / Change Plan"
+                            >
+                              <Layers className="w-4 h-4" />
+                            </button>
+
+                            {/* Record Renewal */}
+                            <button
+                              onClick={() => setRenewalWorkspace(ws)}
+                              className="p-2 text-emerald-700 hover:text-emerald-900 hover:bg-emerald-50 rounded-xl transition-all"
+                              title="Record Renewal Payment"
+                            >
+                              <CreditCard className="w-4 h-4" />
+                            </button>
+
+                            {/* Reset Temp Password */}
+                            <button
+                              onClick={() => handleResetPassword(ws.ownerUserId || `usr_${ws.id}`, ws.ownerFullName)}
+                              className="p-2 text-amber-700 hover:text-amber-900 hover:bg-amber-50 rounded-xl transition-all"
+                              title="Generate Temporary Password"
+                            >
+                              <KeyRound className="w-4 h-4" />
+                            </button>
+
+                            {/* Suspend / Reactivate */}
+                            {!isOwner && (
+                              <button
+                                onClick={() => handleToggleSubscriptionStatus(ws.id, ws.status, ws.name)}
+                                className={`p-2 rounded-xl transition-all ${
+                                  isActive 
+                                    ? 'text-rose-600 hover:bg-rose-50' 
+                                    : 'text-emerald-700 hover:bg-emerald-50'
+                                }`}
+                                title={isActive ? 'Suspend Workspace' : 'Reactivate Workspace'}
+                              >
+                                {isActive ? <Lock className="w-4 h-4" /> : <CheckCircle2 className="w-4 h-4" />}
+                              </button>
+                            )}
+
+                            {/* Delete */}
+                            {!isOwner && (
+                              <button
+                                onClick={() => handleDeleteWorkspace(ws.id, ws.ownerUserId || `usr_${ws.id}`, ws.name)}
+                                className="p-2 text-rose-600 hover:bg-rose-50 rounded-xl transition-all"
+                                title="Delete Tenant"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+
+                          </div>
+                        </td>
+
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
+
         </div>
       )}
 
-      {/* TAB 5: PLATFORM & PAYMENT INSTRUCTIONS SETTINGS */}
-      {activeTab === 'settings' && (
-        <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] max-w-4xl space-y-6">
-          <div>
-            <h2 className="text-xl font-black text-[#18191D]">Platform Administration & Manual Billing Configuration</h2>
-            <p className="text-xs text-stone-500">Update payment receiver details displayed to prospective users on the subscription portal.</p>
-          </div>
+      {/* TAB 3: INBOUND ACCESS REQUESTS QUEUE */}
+      {activeTab === 'requests' && (
+        <AccessRequestsList
+          requests={accessRequests}
+          platformSettings={platformSettings}
+          onRefresh={reloadData}
+          onApproveAndProvision={handleApproveFromRequest}
+        />
+      )}
 
-          {settingsSaved && (
-            <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl flex items-center gap-2 text-emerald-900 text-xs font-bold animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span>Platform settings updated successfully!</span>
+      {/* TAB 4: PROVISION NEW TENANT */}
+      {activeTab === 'provision' && (
+        <div className="space-y-6 max-w-4xl mx-auto">
+          
+          {/* Result Card when account is created */}
+          {provisionResult && provisionResult.success && (
+            <div className="bg-emerald-50 border-2 border-emerald-300 rounded-3xl p-6 sm:p-8 space-y-4 animate-in slide-in-from-top-3">
+              <div className="flex items-center gap-3 text-emerald-800">
+                <div className="w-10 h-10 rounded-full bg-emerald-200 flex items-center justify-center">
+                  <CheckCheck className="w-6 h-6 text-emerald-800" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black">Workspace Successfully Provisioned!</h3>
+                  <p className="text-xs text-emerald-700">Account and isolated database keys created.</p>
+                </div>
+              </div>
+
+              {provisionResult.tempPassword && (
+                <div className="bg-white p-5 rounded-2xl border border-emerald-200 space-y-3">
+                  <div className="font-bold text-xs text-stone-500 uppercase tracking-wider">
+                    Client Onboarding Credentials Card
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+                    <div>
+                      <span className="text-stone-500 block">User Name:</span>
+                      <span className="font-bold text-stone-900">{provisionResult.fullName}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500 block">Login Email:</span>
+                      <span className="font-mono font-bold text-stone-900">{provisionResult.email}</span>
+                    </div>
+                    <div>
+                      <span className="text-stone-500 block">Temporary Password:</span>
+                      <span className="font-mono font-black text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-200">
+                        {provisionResult.tempPassword}
+                      </span>
+                    </div>
+                  </div>
+
+                  <p className="text-[11px] text-stone-500 italic">
+                    * The user will be automatically required to set a strong new private password upon their first login.
+                  </p>
+
+                  <div className="pt-2 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const text = `Hi ${provisionResult.fullName},\n\nYour AEDMIN OS workspace has been provisioned!\n\n🔗 Login URL: ${window.location.origin}\n📧 Email: ${provisionResult.email}\n🔑 Temporary Password: ${provisionResult.tempPassword}\n\nYou will be prompted to set your new private password upon first login.`;
+                        navigator.clipboard.writeText(text);
+                        setCopiedCredentials(true);
+                        setTimeout(() => setCopiedCredentials(false), 3000);
+                      }}
+                      className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow transition-all"
+                    >
+                      {copiedCredentials ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+                      <span>{copiedCredentials ? 'Copied Welcome Message!' : 'Copy Client Welcome Email'}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
-          <form onSubmit={handleSaveSettings} className="space-y-6">
-            
-            {/* GCash Settings */}
-            <div className="p-5 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] space-y-3">
-              <div className="flex items-center gap-2 font-bold text-sm text-stone-900">
-                <Smartphone className="w-4 h-4 text-blue-600" />
-                <span>GCash Configuration (PH)</span>
+          {/* Provisioning Form */}
+          <div className="bg-white rounded-3xl border border-[#ECE6DD] shadow-xs p-6 sm:p-8 space-y-6">
+            <div className="border-b border-[#ECE6DD] pb-4">
+              <h2 className="text-xl font-black text-stone-900">Provision Tenant Workspace</h2>
+              <p className="text-xs text-stone-500 mt-1">
+                Enter freelancer information and verify manual payment details to initialize an isolated environment.
+              </p>
+            </div>
+
+            <form onSubmit={handleProvisionTenant} className="space-y-6 text-xs">
+              
+              {/* Account Details */}
+              <div className="space-y-3">
+                <h3 className="font-bold text-stone-900 uppercase tracking-wider text-[11px] text-stone-400">
+                  1. Freelancer / Tenant Account Profile
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Full Name *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Maria Rodriguez"
+                      value={provisionName}
+                      onChange={e => setProvisionName(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Account Email *</label>
+                    <input
+                      type="email"
+                      placeholder="e.g. maria.assistant@ops.com"
+                      value={provisionEmail}
+                      onChange={e => setProvisionEmail(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Studio / Brand Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Valencia Executive Ops"
+                      value={provisionStudio}
+                      onChange={e => setProvisionStudio(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Timezone</label>
+                    <select
+                      value={provisionTimezone}
+                      onChange={e => setProvisionTimezone(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    >
+                      <option value="Asia/Manila">Asia/Manila (GMT+8)</option>
+                      <option value="Asia/Singapore">Asia/Singapore (GMT+8)</option>
+                      <option value="America/New_York">America/New_York (EST)</option>
+                      <option value="America/Los_Angeles">America/Los_Angeles (PST)</option>
+                      <option value="Europe/London">Europe/London (GMT)</option>
+                      <option value="Australia/Sydney">Australia/Sydney (AEST)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Currency Symbol</label>
+                    <select
+                      value={provisionCurrency}
+                      onChange={e => setProvisionCurrency(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    >
+                      <option value="$">USD ($)</option>
+                      <option value="₱">PHP (₱)</option>
+                      <option value="£">GBP (£)</option>
+                      <option value="€">EUR (€)</option>
+                      <option value="A$">AUD (A$)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Default Hourly Rate</label>
+                    <input
+                      type="number"
+                      value={provisionHourlyRate}
+                      onChange={e => setProvisionHourlyRate(Number(e.target.value) || 0)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+
+              {/* Plan Selection */}
+              <div className="space-y-3 pt-2">
+                <h3 className="font-bold text-stone-900 uppercase tracking-wider text-[11px] text-stone-400">
+                  2. Plan Tier & Quota Limits
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {platformSettings.plans.map(p => {
+                    const isSelected = provisionPlan === p.id;
+                    return (
+                      <div
+                        key={p.id}
+                        onClick={() => handlePlanChange(p.id)}
+                        className={`p-4 rounded-2xl border transition-all cursor-pointer space-y-2 ${
+                          isSelected
+                            ? 'border-stone-900 bg-stone-50 ring-1 ring-stone-900 shadow-xs'
+                            : 'border-[#ECE6DD] bg-white hover:border-stone-400'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="font-black text-stone-900 text-sm">{p.name}</span>
+                          <span className="font-bold text-stone-900">${p.monthlyPriceUSD}/mo</span>
+                        </div>
+                        <p className="text-[11px] text-stone-500 leading-relaxed">{p.description}</p>
+                        <div className="text-[10px] font-bold text-stone-600 pt-1 border-t border-stone-200">
+                          {p.clientLimit === 999 ? 'Unlimited' : p.clientLimit} Clients · {p.storageLimitMB / 1000}GB Storage
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Manual Payment Verification */}
+              <div className="space-y-3 pt-2">
+                <h3 className="font-bold text-stone-900 uppercase tracking-wider text-[11px] text-stone-400">
+                  3. Verified Manual Payment Details
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Billing Cycle</label>
+                    <select
+                      value={payPeriod}
+                      onChange={e => handlePeriodChange(e.target.value as any)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    >
+                      <option value="monthly">Monthly</option>
+                      <option value="annual">Annual (12 Months · 20% Discount)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Payment Method *</label>
+                    <select
+                      value={payMethod}
+                      onChange={e => setPayMethod(e.target.value as any)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    >
+                      <option value="gcash">GCash (Philippines)</option>
+                      <option value="maya">Maya (Philippines)</option>
+                      <option value="bank_transfer">Bank Transfer (BDO Unibank)</option>
+                      <option value="paypal">PayPal International</option>
+                      <option value="wise">Wise Multi-Currency</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Payment Currency</label>
+                    <select
+                      value={payCurrency}
+                      onChange={e => handleCurrencyChange(e.target.value as any)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="PHP">PHP (₱)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Verified Amount ({payCurrency}) *</label>
+                    <input
+                      type="number"
+                      value={payAmount}
+                      onChange={e => setPayAmount(Number(e.target.value) || 0)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-bold text-stone-900 focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Transaction / Reference # *</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. GCASH-98214912"
+                      value={payRef}
+                      onChange={e => setPayRef(e.target.value)}
+                      required
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono uppercase focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="font-bold text-stone-700 block mb-1">Admin Notes</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Verified via Maya SMS alert"
+                      value={payNotes}
+                      onChange={e => setPayNotes(e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Submit Button */}
+              <div className="pt-4 flex items-center justify-end gap-3 border-t border-[#ECE6DD]">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="px-8 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold shadow-lg transition-all flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4 text-amber-400" />
+                  <span>{isSubmitting ? 'Provisioning Workspace...' : 'Complete & Provision Workspace'}</span>
+                </button>
+              </div>
+
+            </form>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB 5: MANUAL PAYMENT LEDGER */}
+      {activeTab === 'payments' && (
+        <div className="space-y-6">
+          
+          {/* Controls Bar */}
+          <div className="bg-white p-4 sm:p-6 rounded-3xl border border-[#ECE6DD] shadow-xs flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-stone-400" />
+              <input
+                type="text"
+                placeholder="Search payments by reference number, client name, email, or studio..."
+                value={paymentSearch}
+                onChange={e => setPaymentSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-stone-50 border border-[#ECE6DD] rounded-2xl text-xs font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <select
+                value={paymentMethodFilter}
+                onChange={e => setPaymentMethodFilter(e.target.value)}
+                className="px-3.5 py-2.5 bg-white border border-[#ECE6DD] rounded-2xl text-xs font-bold text-stone-700 focus:outline-hidden"
+              >
+                <option value="all">All Payment Methods</option>
+                <option value="gcash">GCash</option>
+                <option value="maya">Maya</option>
+                <option value="bank_transfer">Bank Transfer (BDO)</option>
+                <option value="paypal">PayPal</option>
+                <option value="wise">Wise</option>
+              </select>
+
+              <select
+                value={paymentCurrencyFilter}
+                onChange={e => setPaymentCurrencyFilter(e.target.value)}
+                className="px-3.5 py-2.5 bg-white border border-[#ECE6DD] rounded-2xl text-xs font-bold text-stone-700 focus:outline-hidden"
+              >
+                <option value="all">All Currencies</option>
+                <option value="PHP">PHP (₱)</option>
+                <option value="USD">USD ($)</option>
+              </select>
+
+              <button
+                type="button"
+                onClick={handleExportPaymentLedgerCSV}
+                className="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-2xl text-xs font-bold flex items-center gap-2 shadow-xs transition-all cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Export CSV</span>
+              </button>
+            </div>
+
+          </div>
+
+          {/* Payments Table */}
+          <div className="bg-white rounded-3xl border border-[#ECE6DD] shadow-xs overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 border-b border-[#ECE6DD] text-stone-500 uppercase tracking-wider font-bold text-[10px]">
+                  <tr>
+                    <th className="px-6 py-4">Transaction Ref</th>
+                    <th className="px-4 py-4">Client / Studio</th>
+                    <th className="px-4 py-4">Plan & Period</th>
+                    <th className="px-4 py-4">Amount</th>
+                    <th className="px-4 py-4">Method</th>
+                    <th className="px-4 py-4">Verified By</th>
+                    <th className="px-6 py-4 text-right">Valid Until</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[#ECE6DD] font-medium text-stone-900">
+                  {filteredPayments.map(p => (
+                    <tr key={p.id} className="hover:bg-stone-50/70 transition-colors">
+                      <td className="px-6 py-4 font-mono font-bold text-stone-900">
+                        {p.referenceNumber}
+                      </td>
+                      <td className="px-4 py-4">
+                        <div className="font-bold text-stone-900">{p.userName}</div>
+                        <div className="text-stone-500 text-[11px]">{p.businessName} · <span className="font-mono">{p.userEmail}</span></div>
+                      </td>
+                      <td className="px-4 py-4 capitalize">
+                        <span className="font-semibold text-stone-800">{p.planTier.replace('_', ' ')}</span>
+                        <div className="text-[11px] text-stone-500 capitalize">{p.billingPeriod}</div>
+                      </td>
+                      <td className="px-4 py-4 font-black text-stone-900 text-sm">
+                        {p.currency} {p.amount.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-4">
+                        <span className="px-2.5 py-1 bg-stone-100 text-stone-800 rounded-full text-xs font-bold uppercase">
+                          {p.paymentMethod}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-stone-600">
+                        <div>{p.verifiedBy}</div>
+                        <div className="text-[10px] text-stone-400 font-mono">{new Date(p.verifiedAt).toLocaleDateString()}</div>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-100 text-emerald-800 rounded-full text-xs font-bold">
+                          <CheckCircle2 className="w-3 h-3" /> {new Date(p.periodEndDate).toLocaleDateString()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* TAB 6: PLATFORM & PAYMENT SETTINGS */}
+      {activeTab === 'settings' && (
+        <form onSubmit={handleSaveSettings} className="space-y-6 max-w-4xl mx-auto">
+          
+          {settingsSaved && (
+            <div className="p-4 bg-emerald-50 border border-emerald-300 rounded-2xl text-emerald-800 font-bold text-xs flex items-center gap-2 animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              Platform and manual payment configuration saved successfully!
+            </div>
+          )}
+
+          {/* Platform General Information */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-4 text-xs">
+            <h3 className="text-base font-black text-stone-900 flex items-center gap-2 border-b border-[#ECE6DD] pb-3">
+              <Building2 className="w-5 h-5 text-stone-700" />
+              Platform Branding & Administration
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Platform Name</label>
+                <input
+                  type="text"
+                  value={platformSettings.platformName}
+                  onChange={e => setPlatformSettings({ ...platformSettings, platformName: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Platform Owner / Super Admin Name</label>
+                <input
+                  type="text"
+                  value={platformSettings.ownerName}
+                  onChange={e => setPlatformSettings({ ...platformSettings, ownerName: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Owner Email</label>
+                <input
+                  type="email"
+                  value={platformSettings.ownerEmail}
+                  onChange={e => setPlatformSettings({ ...platformSettings, ownerEmail: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">Support Email</label>
+                <input
+                  type="email"
+                  value={platformSettings.supportEmail}
+                  onChange={e => setPlatformSettings({ ...platformSettings, supportEmail: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium focus:ring-2 focus:ring-stone-900 focus:outline-hidden"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Payment Methods Configuration */}
+          <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#ECE6DD] shadow-xs space-y-6 text-xs">
+            <h3 className="text-base font-black text-stone-900 flex items-center gap-2 border-b border-[#ECE6DD] pb-3">
+              <CreditCard className="w-5 h-5 text-stone-700" />
+              Manual Payment Instructions Setup
+            </h3>
+
+            {/* GCash */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-blue-600" /> GCash (Philippines)
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={platformSettings.manualPaymentInstructions.gcash.enabled}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        gcash: { ...platformSettings.manualPaymentInstructions.gcash, enabled: e.target.checked }
+                      }
+                    })}
+                    className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-semibold text-stone-700">Enabled</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Account Name</label>
+                  <label className="font-bold text-stone-700 block mb-1">GCash Account Name</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.gcash.accountName}
@@ -999,11 +1372,11 @@ export default function PlatformAdmin() {
                         gcash: { ...platformSettings.manualPaymentInstructions.gcash, accountName: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Mobile Number</label>
+                  <label className="font-bold text-stone-700 block mb-1">GCash Mobile Number</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.gcash.accountNumber}
@@ -1014,21 +1387,54 @@ export default function PlatformAdmin() {
                         gcash: { ...platformSettings.manualPaymentInstructions.gcash, accountNumber: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
                   />
                 </div>
               </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">GCash Payment Instructions</label>
+                <textarea
+                  rows={2}
+                  value={platformSettings.manualPaymentInstructions.gcash.instructions}
+                  onChange={e => setPlatformSettings({
+                    ...platformSettings,
+                    manualPaymentInstructions: {
+                      ...platformSettings.manualPaymentInstructions,
+                      gcash: { ...platformSettings.manualPaymentInstructions.gcash, instructions: e.target.value }
+                    }
+                  })}
+                  className="w-full px-3.5 py-2 rounded-xl border border-[#ECE6DD] bg-white font-medium"
+                />
+              </div>
             </div>
 
-            {/* Maya Settings */}
-            <div className="p-5 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] space-y-3">
-              <div className="flex items-center gap-2 font-bold text-sm text-stone-900">
-                <Smartphone className="w-4 h-4 text-emerald-600" />
-                <span>Maya Configuration (PH)</span>
+            {/* Maya */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4 text-emerald-600" /> Maya (Philippines)
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={platformSettings.manualPaymentInstructions.maya.enabled}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        maya: { ...platformSettings.manualPaymentInstructions.maya, enabled: e.target.checked }
+                      }
+                    })}
+                    className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-semibold text-stone-700">Enabled</span>
+                </label>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Account Name</label>
+                  <label className="font-bold text-stone-700 block mb-1">Maya Account Name</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.maya.accountName}
@@ -1039,11 +1445,11 @@ export default function PlatformAdmin() {
                         maya: { ...platformSettings.manualPaymentInstructions.maya, accountName: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Mobile Number</label>
+                  <label className="font-bold text-stone-700 block mb-1">Maya Mobile Number</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.maya.accountNumber}
@@ -1054,21 +1460,38 @@ export default function PlatformAdmin() {
                         maya: { ...platformSettings.manualPaymentInstructions.maya, accountNumber: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
                   />
                 </div>
               </div>
             </div>
 
-            {/* BDO Bank Settings */}
-            <div className="p-5 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] space-y-3">
-              <div className="flex items-center gap-2 font-bold text-sm text-stone-900">
-                <Building2 className="w-4 h-4 text-black" />
-                <span>Bank Transfer (BDO Unibank)</span>
+            {/* Bank Transfer / BDO */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                  <Building2 className="w-4 h-4 text-stone-700" /> Bank Transfer (BDO Unibank)
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={platformSettings.manualPaymentInstructions.bankTransfer.enabled}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        bankTransfer: { ...platformSettings.manualPaymentInstructions.bankTransfer, enabled: e.target.checked }
+                      }
+                    })}
+                    className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-semibold text-stone-700">Enabled</span>
+                </label>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Bank Name</label>
+                  <label className="font-bold text-stone-700 block mb-1">Bank Name</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.bankTransfer.bankName}
@@ -1079,11 +1502,11 @@ export default function PlatformAdmin() {
                         bankTransfer: { ...platformSettings.manualPaymentInstructions.bankTransfer, bankName: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Account Name</label>
+                  <label className="font-bold text-stone-700 block mb-1">Account Name</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.bankTransfer.accountName}
@@ -1094,11 +1517,11 @@ export default function PlatformAdmin() {
                         bankTransfer: { ...platformSettings.manualPaymentInstructions.bankTransfer, accountName: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-medium"
                   />
                 </div>
                 <div>
-                  <label className="block font-bold text-stone-600 mb-1">Account Number</label>
+                  <label className="font-bold text-stone-700 block mb-1">Account Number</label>
                   <input
                     type="text"
                     value={platformSettings.manualPaymentInstructions.bankTransfer.accountNumber}
@@ -1109,155 +1532,214 @@ export default function PlatformAdmin() {
                         bankTransfer: { ...platformSettings.manualPaymentInstructions.bankTransfer, accountNumber: e.target.value }
                       }
                     })}
-                    className="w-full p-2.5 bg-white rounded-xl border border-[#ECE6DD] font-semibold font-mono"
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
                   />
                 </div>
               </div>
             </div>
 
-            <div className="pt-4 border-t border-[#ECE6DD]">
-              <button
-                type="submit"
-                className="px-6 py-3.5 bg-[#18191D] hover:bg-black text-white rounded-2xl text-xs font-bold flex items-center gap-2 cursor-pointer shadow-md"
-              >
-                <Check className="w-4 h-4" />
-                <span>Save Platform Configurations</span>
-              </button>
-            </div>
-
-          </form>
-        </div>
-      )}
-
-      {/* RENEWAL MODAL */}
-      {renewalTenant && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white max-w-md w-full rounded-3xl border border-[#ECE6DD] shadow-2xl p-6 space-y-5 text-[#18191D]">
-            <div>
-              <h3 className="text-lg font-black">Record Manual Subscription Renewal</h3>
-              <p className="text-xs text-stone-500 mt-0.5">
-                Extend access for <span className="font-bold text-black">{renewalTenant.name}</span>
-              </p>
-            </div>
-
-            <form onSubmit={handleRecordRenewal} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Payment Method</label>
-                <select
-                  value={renewMethod}
-                  onChange={e => setRenewMethod(e.target.value as any)}
-                  className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                >
-                  <option value="gcash">GCash (PH)</option>
-                  <option value="maya">Maya (PH)</option>
-                  <option value="bank_transfer">Bank Transfer (BDO)</option>
-                  <option value="paypal">PayPal</option>
-                  <option value="wise">Wise</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Amount Paid</label>
-                <div className="flex gap-2">
-                  <select
-                    value={renewCurrency}
-                    onChange={e => setRenewCurrency(e.target.value as any)}
-                    className="w-20 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                  >
-                    <option value="USD">USD</option>
-                    <option value="PHP">PHP</option>
-                  </select>
+            {/* PayPal */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-blue-700" /> PayPal (International USD)
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input
-                    type="number"
-                    required
-                    value={renewAmount}
-                    onChange={e => setRenewAmount(Number(e.target.value))}
-                    className="flex-1 text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
+                    type="checkbox"
+                    checked={platformSettings.manualPaymentInstructions.paypal.enabled}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        paypal: { ...platformSettings.manualPaymentInstructions.paypal, enabled: e.target.checked }
+                      }
+                    })}
+                    className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-semibold text-stone-700">Enabled</span>
+                </label>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">PayPal Email</label>
+                  <input
+                    type="email"
+                    value={platformSettings.manualPaymentInstructions.paypal.email}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        paypal: { ...platformSettings.manualPaymentInstructions.paypal, email: e.target.value }
+                      }
+                    })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">PayPal.me Payment Link</label>
+                  <input
+                    type="text"
+                    placeholder="https://paypal.me/yourtag"
+                    value={platformSettings.manualPaymentInstructions.paypal.paymentLink || ''}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        paypal: { ...platformSettings.manualPaymentInstructions.paypal, paymentLink: e.target.value }
+                      }
+                    })}
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
                   />
                 </div>
               </div>
+            </div>
+
+            {/* Wise */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-sm text-stone-900 flex items-center gap-2">
+                  <Globe className="w-4 h-4 text-emerald-600" /> Wise Multi-Currency
+                </span>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={platformSettings.manualPaymentInstructions.wise.enabled}
+                    onChange={e => setPlatformSettings({
+                      ...platformSettings,
+                      manualPaymentInstructions: {
+                        ...platformSettings.manualPaymentInstructions,
+                        wise: { ...platformSettings.manualPaymentInstructions.wise, enabled: e.target.checked }
+                      }
+                    })}
+                    className="rounded border-stone-300 text-stone-900 focus:ring-0"
+                  />
+                  <span className="font-semibold text-stone-700">Enabled</span>
+                </label>
+              </div>
 
               <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Transaction Ref Number *</label>
+                <label className="font-bold text-stone-700 block mb-1">Wise Tag / Account Email</label>
                 <input
                   type="text"
-                  required
-                  value={renewRef}
-                  onChange={e => setRenewRef(e.target.value)}
-                  placeholder="e.g., GCASH-1928374650"
-                  className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
+                  value={platformSettings.manualPaymentInstructions.wise.emailOrTag}
+                  onChange={e => setPlatformSettings({
+                    ...platformSettings,
+                    manualPaymentInstructions: {
+                      ...platformSettings.manualPaymentInstructions,
+                      wise: { ...platformSettings.manualPaymentInstructions.wise, emailOrTag: e.target.value }
+                    }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-[#ECE6DD] bg-white font-mono"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-xs font-bold text-stone-700 mb-1">Extension Duration (Months)</label>
-                <input
-                  type="number"
-                  min={1}
-                  max={36}
-                  value={renewMonths}
-                  onChange={e => setRenewMonths(Number(e.target.value))}
-                  className="w-full text-xs font-semibold p-3 bg-[#FAF8F5] rounded-xl border border-[#ECE6DD]"
-                />
-              </div>
+          </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-[#ECE6DD]">
-                <button
-                  type="button"
-                  onClick={() => setRenewalTenant(null)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-bold text-stone-600 hover:bg-stone-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2.5 bg-[#18191D] hover:bg-black text-white rounded-xl text-xs font-bold shadow-xs cursor-pointer"
-                >
-                  Verify & Extend
-                </button>
-              </div>
-            </form>
+          {/* Submit */}
+          <div className="flex justify-end">
+            <button
+              type="submit"
+              className="px-8 py-3 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold shadow-lg transition-all"
+            >
+              Save Platform Configuration
+            </button>
+          </div>
+
+        </form>
+      )}
+
+      {/* TAB 7: SYSTEM AUDIT LOGS */}
+      {activeTab === 'audit' && (
+        <div className="space-y-4">
+          <div className="bg-white p-6 rounded-3xl border border-[#ECE6DD] shadow-xs">
+            <h2 className="text-lg font-black text-stone-900 mb-1">Platform System Audit Logs</h2>
+            <p className="text-xs text-stone-500 mb-4">
+              Real-time audit log of all provisioning, password resets, payment verifications, and tenant actions.
+            </p>
+            <AuditLogsViewer logs={auditLogs as any} />
           </div>
         </div>
       )}
 
-      {/* RESET PASSWORD RESULT MODAL */}
-      {resetUserResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-white max-w-md w-full rounded-3xl border border-[#ECE6DD] shadow-2xl p-6 space-y-4 text-[#18191D]">
-            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-800 flex items-center justify-center">
-              <KeyRound className="w-5 h-5" />
-            </div>
-            <h3 className="text-lg font-black">Temporary Password Generated</h3>
-            <p className="text-xs text-stone-500">
-              A new temporary password has been set for <span className="font-bold text-black">{resetUserResult.userName}</span>.
-            </p>
+      {/* MODAL 1: Tenant Details & Resource Usage Inspector */}
+      {inspectModalWorkspace && (
+        <TenantDetailsModal
+          workspace={inspectModalWorkspace}
+          payments={payments}
+          onClose={() => setInspectModalWorkspace(null)}
+          onInspect={(id) => handleInspectWorkspace(id)}
+          onChangePlan={(ws) => setChangePlanWorkspace(ws)}
+          onRecordRenewal={(ws) => setRenewalWorkspace(ws)}
+          onResetPassword={(uid, name) => handleResetPassword(uid, name)}
+        />
+      )}
 
-            <div className="p-3.5 bg-[#FAF8F5] rounded-2xl border border-[#ECE6DD] flex items-center justify-between">
-              <span className="font-mono text-base font-black text-black">{resetUserResult.tempPassword}</span>
+      {/* MODAL 2: Change Subscription Plan Tier */}
+      {changePlanWorkspace && (
+        <ChangePlanModal
+          workspace={changePlanWorkspace}
+          platformSettings={platformSettings}
+          onClose={() => setChangePlanWorkspace(null)}
+          onConfirmChange={handleConfirmChangePlan}
+        />
+      )}
+
+      {/* MODAL 3: Record Renewal Modal */}
+      {renewalWorkspace && (
+        <RecordRenewalModal
+          workspace={renewalWorkspace}
+          platformSettings={platformSettings}
+          onClose={() => setRenewalWorkspace(null)}
+          onConfirmRenewal={handleConfirmRenewal}
+        />
+      )}
+
+      {/* MODAL 4: Temporary Password Issued Modal */}
+      {resetUserResult && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm overflow-y-auto animate-in fade-in duration-200">
+          <div className="bg-white max-w-md w-full rounded-[32px] border border-[#ECE6DD] shadow-2xl p-6 sm:p-8 space-y-4 text-[#18191D]">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-900 flex items-center justify-center font-bold">
+                <KeyRound className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-black text-lg text-stone-900">Temporary Password Generated</h3>
+                <p className="text-xs text-stone-500">For {resetUserResult.userName}</p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-stone-50 rounded-2xl border border-stone-200 space-y-2 text-xs">
+              <span className="text-stone-500 font-medium block">Credentials:</span>
+              <div className="font-mono font-black text-amber-800 text-base bg-white p-3 rounded-xl border border-amber-200 select-all">
+                {resetUserResult.tempPassword}
+              </div>
+              <p className="text-[11px] text-stone-500">
+                Send this password to the user. They will be forced to change it on their next login.
+              </p>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
                 onClick={() => {
                   navigator.clipboard.writeText(resetUserResult.tempPassword);
                   alert('Password copied to clipboard!');
                 }}
-                className="px-3 py-1.5 bg-white border border-[#ECE6DD] rounded-xl text-xs font-bold text-stone-800 hover:bg-stone-50"
+                className="px-4 py-2 bg-stone-900 text-white hover:bg-stone-800 rounded-xl text-xs font-bold shadow transition-all"
               >
-                Copy
+                Copy Password
+              </button>
+              <button
+                type="button"
+                onClick={() => setResetUserResult(null)}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-800 rounded-xl text-xs font-bold transition-all"
+              >
+                Done
               </button>
             </div>
-
-            <p className="text-[11px] text-stone-500">
-              The user will be required to choose a new secure password on their next login.
-            </p>
-
-            <button
-              type="button"
-              onClick={() => setResetUserResult(null)}
-              className="w-full py-3 bg-[#18191D] hover:bg-black text-white rounded-xl text-xs font-bold cursor-pointer"
-            >
-              Done
-            </button>
           </div>
         </div>
       )}

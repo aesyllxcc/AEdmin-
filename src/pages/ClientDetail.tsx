@@ -36,6 +36,9 @@ import { TaskModal } from "@/components/modals/TaskModal";
 import { ClientModal } from "@/components/modals/ClientModal";
 import { InvoiceModal } from "@/components/modals/InvoiceModal";
 import { TimeModal } from "@/components/modals/TimeModal";
+import { ApprovalModal } from "@/components/modals/ApprovalModal";
+import { StrategicObjectiveModal } from "@/components/modals/StrategicObjectiveModal";
+import { PortalSetupModal } from "@/components/portal/PortalSetupModal";
 import { ClientGlobalOpsModal } from "@/components/globalOps/ClientGlobalOpsModal";
 import { StakeholderMeetingOverlapFinder } from "@/components/clients/StakeholderMeetingOverlapFinder";
 import { ClientProfileExpanded } from "@/components/clients/ClientProfileExpanded";
@@ -55,12 +58,13 @@ export default function ClientDetail() {
     updateClient, 
     toggleTaskStatus, 
     startTimer, 
-    setPortalClientId 
+    setPortalClientId,
+    updateApprovalStatus
   } = useApp();
 
   const client = clients.find(c => c.id === clientId);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'intelligence' | 'stakeholders' | 'onboarding' | 'tasks' | 'time' | 'finance' | 'approvals' | 'offboarding'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'intelligence' | 'stakeholders' | 'onboarding' | 'tasks' | 'approvals' | 'offboarding'>('overview');
   
   // Modals
   const [taskModalOpen, setTaskModalOpen] = useState(false);
@@ -68,6 +72,9 @@ export default function ClientDetail() {
   const [invoiceModalOpen, setInvoiceModalOpen] = useState(false);
   const [timeModalOpen, setTimeModalOpen] = useState(false);
   const [globalOpsModalOpen, setGlobalOpsModalOpen] = useState(false);
+  const [approvalModalOpen, setApprovalModalOpen] = useState(false);
+  const [strategicObjectiveModalOpen, setStrategicObjectiveModalOpen] = useState(false);
+  const [portalSetupModalOpen, setPortalSetupModalOpen] = useState(false);
 
   // New Memory Vault item state
   const [newMemoryNote, setNewMemoryNote] = useState("");
@@ -188,6 +195,15 @@ export default function ClientDetail() {
           )}
 
           <button
+            onClick={() => setPortalSetupModalOpen(true)}
+            className="px-3.5 py-2 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+            title="Configure Client Portal Visibility & Settings"
+          >
+            <Settings2 className="w-3.5 h-3.5 text-blue-600" />
+            Portal Setup
+          </button>
+
+          <button
             onClick={() => {
               setPortalClientId(client.id);
               navigate('/portal');
@@ -234,8 +250,6 @@ export default function ClientDetail() {
           { id: 'stakeholders', label: 'Stakeholder Overlap' },
           { id: 'onboarding', label: `Onboarding (${client.onboardingProgress}%)` },
           { id: 'tasks', label: `Tasks (${clientTasks.length})` },
-          { id: 'time', label: `Time & Retainer (${client.usedHoursThisMonth}h)` },
-          { id: 'finance', label: `Invoices (${clientInvoices.length})` },
           { id: 'approvals', label: `Approvals (${clientApprovals.length})` },
           { id: 'offboarding', label: 'Offboarding Protocol' }
         ].map(tab => (
@@ -286,10 +300,10 @@ export default function ClientDetail() {
             </div>
           </div>
 
-          {/* Quick Hub Grid: Executive Snapshot & Active Deliverables */}
+          {/* Quick Hub Grid: Executive Snapshot & In-Flight Tasks */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* Left 2 Cols: Active Tasks & Open Approvals */}
+            {/* Left 2 Cols: Active Tasks & Memory Highlights */}
             <div className="lg:col-span-2 space-y-6">
               
               <div className="bg-white p-6 rounded-[28px] border border-border-subtle shadow-xs space-y-4">
@@ -360,7 +374,7 @@ export default function ClientDetail() {
 
             </div>
 
-            {/* Right Col: Client Intelligence Summary */}
+            {/* Right Col: Client Intelligence Summary & Hubs */}
             <div className="space-y-6">
               
               <div className="bg-white p-6 rounded-[28px] border border-border-subtle shadow-xs space-y-4">
@@ -414,6 +428,125 @@ export default function ClientDetail() {
 
             </div>
 
+          </div>
+
+          {/* Integrated Time & Retainer Section inside Overview */}
+          <div className="bg-white p-6 rounded-[28px] border border-border-subtle shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-border-subtle">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-emerald-600" />
+                  <h3 className="text-base font-bold text-text-main">Time & Retainer Allocation</h3>
+                </div>
+                <p className="text-xs text-text-muted mt-0.5">
+                  {client.usedHoursThisMonth} of {client.purchasedHours} hours utilized this monthly cycle • {Math.max(0, (client.purchasedHours || 0) - (client.usedHoursThisMonth || 0)).toFixed(1)}h remaining
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => startTimer({ clientId: client.id, notes: `Client deep work for ${client.name}` })}
+                  className="px-3.5 py-1.5 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-colors border border-emerald-200"
+                >
+                  <Play className="w-3 h-3 fill-current" />
+                  Quick Timer
+                </button>
+                <button
+                  onClick={() => setTimeModalOpen(true)}
+                  className="px-3.5 py-1.5 bg-sidebar-bg hover:bg-sidebar-active text-white rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Log Time Entry
+                </button>
+              </div>
+            </div>
+
+            {/* Time Entries Table */}
+            <div className="rounded-2xl border border-border-subtle overflow-hidden">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-[#FDFBF7] border-b border-border-subtle text-text-muted uppercase tracking-wider font-semibold">
+                  <tr>
+                    <th className="p-3.5">Date</th>
+                    <th className="p-3.5">Description / Deliverable</th>
+                    <th className="p-3.5">Duration</th>
+                    <th className="p-3.5">Billable</th>
+                    <th className="p-3.5 text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border-subtle">
+                  {clientTimeEntries.slice(0, 8).map(entry => (
+                    <tr key={entry.id} className="hover:bg-[#FDFBF7]/50">
+                      <td className="p-3.5 font-mono">{entry.date}</td>
+                      <td className="p-3.5 font-medium text-text-main">{entry.notes}</td>
+                      <td className="p-3.5 font-mono font-semibold">{entry.durationMinutes} min ({(entry.durationMinutes / 60).toFixed(2)}h)</td>
+                      <td className="p-3.5">
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${entry.isBillable ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`}>
+                          {entry.isBillable ? 'Billable' : 'Internal'}
+                        </span>
+                      </td>
+                      <td className="p-3.5 text-right font-bold text-text-main">${entry.value}</td>
+                    </tr>
+                  ))}
+                  {clientTimeEntries.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-xs text-text-muted">
+                        No time entries logged yet for this client.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Integrated Invoices & Payment Transaction Ledger inside Overview */}
+          <div className="bg-white p-6 rounded-[28px] border border-border-subtle shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-3 border-b border-border-subtle">
+              <div>
+                <div className="flex items-center gap-2">
+                  <DollarSign className="w-4 h-4 text-blue-600" />
+                  <h3 className="text-base font-bold text-text-main">Invoices & Payment Transaction Ledger</h3>
+                </div>
+                <p className="text-xs text-text-muted mt-0.5">
+                  Monthly Retainer Fee: ${monthlyFee.toLocaleString()}/mo • Total YTD Revenue: ${(client.totalRevenueYTD || 0).toLocaleString()}
+                </p>
+              </div>
+              <button
+                onClick={() => setInvoiceModalOpen(true)}
+                className="px-3.5 py-1.5 bg-sidebar-bg hover:bg-sidebar-active text-white rounded-full text-xs font-semibold flex items-center gap-1.5 shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                Generate Invoice
+              </button>
+            </div>
+
+            {/* Invoices List */}
+            <div className="space-y-3">
+              {clientInvoices.map(inv => (
+                <div key={inv.id} className="p-4 bg-[#FDFBF7] rounded-2xl border border-border-subtle flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-white transition-colors">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h4 className="font-mono text-sm font-bold text-text-main">{inv.invoiceNumber}</h4>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
+                        inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                      }`}>
+                        {inv.status}
+                      </span>
+                    </div>
+                    <p className="text-xs text-text-muted mt-0.5">Issued: {inv.issueDate} • Due: {inv.dueDate}</p>
+                  </div>
+                  <div className="sm:text-right">
+                    <div className="text-base font-extrabold text-text-main">${(inv.total || 0).toLocaleString()}</div>
+                    <p className="text-[11px] text-text-muted">{(inv.items || []).length} line items</p>
+                  </div>
+                </div>
+              ))}
+
+              {clientInvoices.length === 0 && (
+                <div className="p-6 text-center text-xs text-text-muted bg-[#FDFBF7] rounded-2xl border border-border-subtle">
+                  No invoices generated yet for this workspace.
+                </div>
+              )}
+            </div>
           </div>
 
         </div>
@@ -549,127 +682,149 @@ export default function ClientDetail() {
         </div>
       )}
 
-      {/* 5. TIME & RETAINER TAB */}
-      {activeTab === 'time' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-text-main">Retainer & Billable Hours Log</h3>
-              <p className="text-xs text-text-muted">{client.usedHoursThisMonth} of {client.purchasedHours} hours utilized this cycle</p>
-            </div>
-            <button
-              onClick={() => setTimeModalOpen(true)}
-              className="px-4 py-2 bg-sidebar-bg hover:bg-sidebar-active text-white rounded-full text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" /> Log Time Entry
-            </button>
-          </div>
-
-          <div className="bg-white rounded-[28px] border border-border-subtle shadow-xs overflow-hidden">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-[#FDFBF7] border-b border-border-subtle text-text-muted uppercase tracking-wider font-semibold">
-                <tr>
-                  <th className="p-4">Date</th>
-                  <th className="p-4">Description / Deliverable</th>
-                  <th className="p-4">Duration</th>
-                  <th className="p-4">Billable</th>
-                  <th className="p-4 text-right">Value</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {clientTimeEntries.map(entry => (
-                  <tr key={entry.id} className="hover:bg-[#FDFBF7]/50">
-                    <td className="p-4 font-mono">{entry.date}</td>
-                    <td className="p-4 font-medium text-text-main">{entry.notes}</td>
-                    <td className="p-4 font-mono font-semibold">{entry.durationMinutes} min ({(entry.durationMinutes / 60).toFixed(2)}h)</td>
-                    <td className="p-4">
-                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${entry.isBillable ? 'bg-emerald-100 text-emerald-800' : 'bg-gray-100 text-gray-700'}`}>
-                        {entry.isBillable ? 'Billable' : 'Internal'}
-                      </span>
-                    </td>
-                    <td className="p-4 text-right font-bold text-text-main">${entry.value}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* 6. FINANCE TAB */}
-      {activeTab === 'finance' && (
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="text-base font-bold text-text-main">Client Invoices & Billing History</h3>
-              <p className="text-xs text-text-muted">Total YTD Revenue: ${(client.totalRevenueYTD || 0).toLocaleString()}</p>
-            </div>
-            <button
-              onClick={() => setInvoiceModalOpen(true)}
-              className="px-4 py-2 bg-sidebar-bg hover:bg-sidebar-active text-white rounded-full text-xs font-semibold flex items-center gap-1.5"
-            >
-              <Plus className="w-3.5 h-3.5" /> Generate Invoice
-            </button>
-          </div>
-
-          <div className="space-y-3">
-            {clientInvoices.map(inv => (
-              <div key={inv.id} className="p-5 bg-white rounded-2xl border border-border-subtle flex items-center justify-between">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h4 className="font-mono text-sm font-bold text-text-main">{inv.invoiceNumber}</h4>
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full capitalize ${
-                      inv.status === 'paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {inv.status}
-                    </span>
-                  </div>
-                  <p className="text-xs text-text-muted mt-1">Issued: {inv.issueDate} • Due: {inv.dueDate}</p>
-                </div>
-                <div className="text-right">
-                  <div className="text-base font-extrabold text-text-main">${(inv.total || 0).toLocaleString()}</div>
-                  <p className="text-xs text-text-muted">{(inv.items || []).length} line items</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* 7. APPROVALS TAB */}
+      {/* 5. APPROVALS TAB */}
       {activeTab === 'approvals' && (
         <div className="space-y-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <h3 className="text-base font-bold text-text-main">Deliverables Pending Client Approval</h3>
-              <p className="text-xs text-text-muted">Track sign-offs, revision requests, and client feedback.</p>
+              <h3 className="text-base font-bold text-text-main">Deliverables & Client Sign-Offs</h3>
+              <p className="text-xs text-text-muted">Track sign-offs, revision requests, SLAs, and approval greenlights for {client.name}.</p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setApprovalModalOpen(true)}
+                className="px-4 py-2 bg-sidebar-bg hover:bg-sidebar-active text-white rounded-full text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" /> New Approval Request
+              </button>
             </div>
           </div>
 
-          <div className="space-y-3">
-            {clientApprovals.map(app => (
-              <div key={app.id} className="p-5 bg-white rounded-2xl border border-border-subtle space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h4 className="text-sm font-bold text-text-main">{app.deliverableTitle}</h4>
-                    <p className="text-xs text-text-muted mt-0.5">{app.description}</p>
-                  </div>
-                  <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full capitalize ${
-                    app.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
-                    app.status === 'pending' ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {app.status.replace('_', ' ')}
-                  </span>
-                </div>
-
-                {app.driveLink && (
-                  <a href={app.driveLink} target="_blank" rel="noreferrer" className="text-xs text-card-blue hover:underline flex items-center gap-1">
-                    <FileText className="w-3.5 h-3.5" /> Review Deliverable Document
-                  </a>
-                )}
+          {/* Metric Badges */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="p-4 bg-white rounded-2xl border border-border-subtle shadow-xs">
+              <span className="text-[11px] font-bold text-text-muted uppercase">Pending Action</span>
+              <div className="text-xl font-extrabold text-blue-600 mt-1">
+                {clientApprovals.filter(a => a.status === 'pending' || a.status === 'in_review').length}
               </div>
-            ))}
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-border-subtle shadow-xs">
+              <span className="text-[11px] font-bold text-text-muted uppercase">Approved & Greenlit</span>
+              <div className="text-xl font-extrabold text-emerald-600 mt-1">
+                {clientApprovals.filter(a => a.status === 'approved').length}
+              </div>
+            </div>
+            <div className="p-4 bg-white rounded-2xl border border-border-subtle shadow-xs">
+              <span className="text-[11px] font-bold text-text-muted uppercase">Revisions / Attention</span>
+              <div className="text-xl font-extrabold text-amber-600 mt-1">
+                {clientApprovals.filter(a => a.status === 'revision_requested' || a.status === 'rejected').length}
+              </div>
+            </div>
           </div>
+
+          {clientApprovals.length === 0 ? (
+            <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-border-subtle space-y-3">
+              <CheckCircle2 className="w-8 h-8 text-text-muted mx-auto opacity-50" />
+              <h4 className="text-sm font-bold text-text-main">No Deliverable Approvals Configured</h4>
+              <p className="text-xs text-text-muted max-w-md mx-auto">
+                Publish deliverables, documents, or schedule shifts for client review to streamline asynchronous decision-making.
+              </p>
+              <button
+                onClick={() => setApprovalModalOpen(true)}
+                className="px-4 py-2 bg-sidebar-bg text-white rounded-full text-xs font-semibold inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Create First Approval
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {clientApprovals.map(app => {
+                const title = app.title || (app as any).deliverableTitle || 'Deliverable Sign-Off';
+                const link = app.reviewLink || (app as any).driveLink;
+                const desc = app.context || (app as any).description;
+
+                return (
+                  <div key={app.id} className="p-5 bg-white rounded-2xl border border-border-subtle space-y-3 shadow-xs">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-sm font-bold text-text-main">{title}</h4>
+                          {app.type && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-stone-100 text-stone-700 uppercase tracking-wide">
+                              {app.type.replace('_', ' ')}
+                            </span>
+                          )}
+                          {app.priority && (
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                              app.priority === 'urgent' ? 'bg-rose-100 text-rose-800' :
+                              app.priority === 'high' ? 'bg-amber-100 text-amber-800' : 'bg-slate-100 text-slate-700'
+                            }`}>
+                              {app.priority} priority
+                            </span>
+                          )}
+                        </div>
+                        {desc && <p className="text-xs text-text-muted">{desc}</p>}
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`text-[10px] font-bold px-2.5 py-1 rounded-full capitalize ${
+                          app.status === 'approved' ? 'bg-emerald-100 text-emerald-800' :
+                          app.status === 'pending' || app.status === 'in_review' ? 'bg-blue-100 text-blue-800' : 
+                          'bg-amber-100 text-amber-800'
+                        }`}>
+                          {app.status.replace('_', ' ')}
+                        </span>
+                      </div>
+                    </div>
+
+                    {app.recommendation && (
+                      <div className="p-2.5 rounded-xl bg-purple-50/70 border border-purple-100 text-xs text-purple-900">
+                        <span className="font-bold">Executive Recommendation: </span>
+                        {app.recommendation}
+                      </div>
+                    )}
+
+                    <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-border-subtle/50 text-xs">
+                      <div className="flex items-center gap-4 text-text-muted text-[11px]">
+                        {app.dueDate && <span>Due: <strong className="text-text-main">{app.dueDate}</strong></span>}
+                        {app.assignedApprover && <span>Approver: <strong className="text-text-main">{app.assignedApprover}</strong></span>}
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {link && (
+                          <a 
+                            href={link} 
+                            target="_blank" 
+                            rel="noreferrer" 
+                            className="px-3 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                          >
+                            <FileText className="w-3 h-3" /> Review Document
+                          </a>
+                        )}
+
+                        {app.status === 'pending' && (
+                          <>
+                            <button
+                              onClick={() => updateApprovalStatus(app.id, 'approved', 'Approved by operator')}
+                              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Approve
+                            </button>
+                            <button
+                              onClick={() => updateApprovalStatus(app.id, 'revision_requested', 'Revision requested')}
+                              className="px-3 py-1 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-lg text-xs font-semibold transition-colors"
+                            >
+                              Request Changes
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -683,6 +838,23 @@ export default function ClientDetail() {
       <ClientModal isOpen={clientModalOpen} onClose={() => setClientModalOpen(false)} clientToEdit={client} />
       <InvoiceModal isOpen={invoiceModalOpen} onClose={() => setInvoiceModalOpen(false)} defaultClientId={client.id} />
       <TimeModal isOpen={timeModalOpen} onClose={() => setTimeModalOpen(false)} defaultClientId={client.id} />
+      <ApprovalModal 
+        isOpen={approvalModalOpen} 
+        onClose={() => setApprovalModalOpen(false)} 
+        defaultClientId={client.id} 
+      />
+      <StrategicObjectiveModal 
+        isOpen={strategicObjectiveModalOpen} 
+        onClose={() => setStrategicObjectiveModalOpen(false)} 
+        defaultClientId={client.id} 
+      />
+      <PortalSetupModal 
+        isOpen={portalSetupModalOpen} 
+        onClose={() => setPortalSetupModalOpen(false)} 
+        client={client}
+        onOpenNewObjective={() => setStrategicObjectiveModalOpen(true)}
+        onOpenNewApproval={() => setApprovalModalOpen(true)}
+      />
       <ClientGlobalOpsModal 
         isOpen={globalOpsModalOpen} 
         onClose={() => setGlobalOpsModalOpen(false)} 

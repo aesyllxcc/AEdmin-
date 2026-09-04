@@ -15,19 +15,19 @@ import {
   Check,
   Archive,
   Trash2,
-  Edit
+  Edit,
+  TrendingUp
 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useApp } from "@/context/AppContext";
 import { ClientModal } from "@/components/modals/ClientModal";
-import { ClientLifecycleCRM } from "@/components/clients/ClientLifecycleCRM";
 import { WorkflowBuilder } from "@/components/clients/WorkflowBuilder";
 import { Client } from "@/types";
 
 export default function Clients() {
   const { clients, deleteClient, archiveClient, restoreClient, duplicateClient } = useApp();
   
-  const [viewMode, setViewMode] = useState<'directory' | 'crm' | 'workflows'>('directory');
+  const [viewMode, setViewMode] = useState<'directory' | 'workflows'>('directory');
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [clientModalOpen, setClientModalOpen] = useState(false);
@@ -83,16 +83,6 @@ export default function Clients() {
               Directory Grid
             </button>
             <button
-              onClick={() => setViewMode('crm')}
-              className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
-                viewMode === 'crm' 
-                  ? 'bg-sidebar-bg text-white shadow-xs' 
-                  : 'text-stone-600 hover:text-stone-900'
-              }`}
-            >
-              Lifecycle CRM
-            </button>
-            <button
               onClick={() => setViewMode('workflows')}
               className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${
                 viewMode === 'workflows' 
@@ -100,9 +90,17 @@ export default function Clients() {
                   : 'text-stone-600 hover:text-stone-900'
               }`}
             >
-              Workflow Builder
+              Workflow Automation
             </button>
           </div>
+
+          <Link
+            to="/opportunities"
+            className="hidden sm:flex items-center gap-1.5 px-4 py-2 bg-purple-50 hover:bg-purple-100 text-purple-900 rounded-full text-xs font-semibold border border-purple-200 transition-colors"
+          >
+            <TrendingUp className="w-3.5 h-3.5 text-purple-600" />
+            <span>Lifecycle CRM & Pipeline →</span>
+          </Link>
 
           <div className="hidden lg:flex items-center gap-2 px-4 py-2 bg-emerald-50 text-emerald-900 rounded-full text-xs font-semibold border border-emerald-200">
             <DollarSign className="w-3.5 h-3.5" />
@@ -118,9 +116,7 @@ export default function Clients() {
         </div>
       </div>
 
-      {viewMode === 'crm' ? (
-        <ClientLifecycleCRM />
-      ) : viewMode === 'workflows' ? (
+      {viewMode === 'workflows' ? (
         <WorkflowBuilder />
       ) : (
         <>

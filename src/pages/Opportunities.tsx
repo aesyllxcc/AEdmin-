@@ -26,10 +26,12 @@ import {
 } from "lucide-react";
 import { useApp } from "@/context/AppContext";
 import { Opportunity } from "@/types";
+import { ClientLifecycleCRM } from "@/components/clients/ClientLifecycleCRM";
 
 export default function Opportunities() {
   const { opportunities, addOpportunity, updateOpportunity, deleteOpportunity, addClient } = useApp();
 
+  const [viewMode, setViewMode] = useState<'pipeline' | 'lifecycle_crm' | 'analytics'>('pipeline');
   const [modalOpen, setModalOpen] = useState(false);
   const [tallyModalOpen, setTallyModalOpen] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
@@ -259,200 +261,229 @@ export default function Opportunities() {
         <div>
           <div className="flex items-center gap-2">
             <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-[#18191D] text-white">
-              Business Development & Pipeline
+              Business Development & Lifecycle CRM
             </span>
             <span className="text-xs text-[#797E8B] font-medium">
               ${totalPipelineValue.toLocaleString()} Active Pipeline • ${Math.round(weightedPipelineValue).toLocaleString()} Weighted
             </span>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-[#18191D] mt-2">
-            Inbound Leads & Opportunities
+            Business Development & Client Lifecycle
           </h1>
           <p className="text-xs sm:text-sm text-[#797E8B] mt-1 font-medium">
-            Connect your Tally.so intake forms to automatically ingest inbound client leads, track discovery calls, and convert won proposals into client workspaces.
+            Manage inbound leads, Tally.so intake forms, proposal pipeline, and end-to-end client lifecycle stages.
           </p>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex bg-stone-100 p-1 rounded-full border border-border-subtle">
+            <button
+              onClick={() => setViewMode('pipeline')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                viewMode === 'pipeline' 
+                  ? 'bg-sidebar-bg text-white shadow-xs' 
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Deal Pipeline
+            </button>
+            <button
+              onClick={() => setViewMode('lifecycle_crm')}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition-all ${
+                viewMode === 'lifecycle_crm' 
+                  ? 'bg-sidebar-bg text-white shadow-xs' 
+                  : 'text-stone-600 hover:text-stone-900'
+              }`}
+            >
+              Lifecycle CRM
+            </button>
+          </div>
+
           <button
             onClick={() => setTallyModalOpen(true)}
-            className="px-4 py-2.5 bg-[#FAF7F2] border border-[#ECE6DD] hover:bg-[#ECE6DD] text-[#18191D] rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
+            className="px-3.5 py-2 bg-[#FAF7F2] border border-[#ECE6DD] hover:bg-[#ECE6DD] text-[#18191D] rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs"
           >
             <Webhook className="w-3.5 h-3.5 text-[#5B21B6]" />
-            Tally.so Integration
+            Tally Intake
           </button>
           <button
             onClick={() => setModalOpen(true)}
-            className="px-5 py-2.5 bg-[#18191D] hover:bg-black text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs active:scale-95"
+            className="px-4 py-2 bg-[#18191D] hover:bg-black text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-all shadow-xs active:scale-95"
           >
             <Plus className="w-3.5 h-3.5" />
-            Add Opportunity
+            Add Deal
           </button>
         </div>
       </div>
 
-      {/* Success Notification Banner */}
-      {ingestSuccessMessage && (
-        <div className="p-4 bg-[#DCFCE7] border border-[#BBF7D0] rounded-2xl text-xs text-[#166534] font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
-          <div className="flex items-center gap-2">
-            <Check className="w-4 h-4 text-[#166534]" />
-            <span>{ingestSuccessMessage}</span>
-          </div>
-          <button onClick={() => setIngestSuccessMessage(null)} className="text-[#166534] hover:opacity-75">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
-
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
-        <div className="bg-[#FEF9C3] p-5 rounded-[28px] border border-[#FEF08A] shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#854D0E]">Total Pipeline Value</span>
-          <div className="text-3xl font-black text-[#18191D] mt-1">${totalPipelineValue.toLocaleString()}</div>
-          <p className="text-xs text-[#854D0E] mt-1">{opportunities.length} active opportunities</p>
-        </div>
-
-        <div className="bg-[#EDE9FE] p-5 rounded-[28px] border border-[#DDD6FE] shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#5B21B6]">Weighted Forecast</span>
-          <div className="text-3xl font-black text-[#18191D] mt-1">${Math.round(weightedPipelineValue).toLocaleString()}</div>
-          <p className="text-xs text-[#5B21B6] mt-1">Probability-adjusted revenue</p>
-        </div>
-
-        <div className="bg-[#DCFCE7] p-5 rounded-[28px] border border-[#BBF7D0] shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">Closed / Won Deals</span>
-          <div className="text-3xl font-black text-[#18191D] mt-1">${wonValue.toLocaleString()}</div>
-          <p className="text-xs text-[#166534] mt-1">Converted retainer MRR</p>
-        </div>
-
-        <div className="bg-[#E0F2FE] p-5 rounded-[28px] border border-[#BAE6FD] shadow-xs">
-          <span className="text-[11px] font-bold uppercase tracking-wider text-[#0369A1]">Win Rate</span>
-          <div className="text-3xl font-black text-[#18191D] mt-1">
-            {opportunities.length > 0 ? Math.round((opportunities.filter(o => o.stage === 'won').length / opportunities.length) * 100) : 0}%
-          </div>
-          <p className="text-xs text-[#0369A1] mt-1">Conversion efficiency</p>
-        </div>
-      </div>
-
-      {/* Tally.so Quick Banner */}
-      <div className="p-5 bg-white rounded-[28px] border border-[#ECE6DD] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-2xl bg-[#EDE9FE] text-[#5B21B6] flex items-center justify-center font-bold text-xs shrink-0">
-            <Webhook className="w-5 h-5" />
-          </div>
-          <div>
-            <h3 className="text-sm font-bold text-[#18191D]">Tally.so Lead Intake Integration</h3>
-            <p className="text-xs text-[#797E8B]">
-              Directly sync your Tally contact / intake forms into this pipeline without manual data entry.
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <button
-            onClick={handleCopyWebhook}
-            className="px-4 py-2 bg-[#FAF7F2] hover:bg-[#ECE6DD] text-[#18191D] border border-[#ECE6DD] rounded-full text-xs font-bold flex items-center gap-1.5 transition-all"
-          >
-            {copiedWebhook ? <Check className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
-            {copiedWebhook ? 'Copied Webhook!' : 'Copy Webhook URL'}
-          </button>
-          <button
-            onClick={() => setTallyModalOpen(true)}
-            className="px-4 py-2 bg-[#18191D] hover:bg-black text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-all"
-          >
-            <Sparkles className="w-3.5 h-3.5" /> Setup Guide & Simulator
-          </button>
-        </div>
-      </div>
-
-      {/* Kanban Board of Stages */}
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        {stages.map(st => {
-          const stageOpps = opportunities.filter(o => o.stage === st.id);
-          const stageTotal = stageOpps.reduce((acc, o) => acc + (o.estimatedValue || 0), 0);
-
-          return (
-            <div key={st.id} className="bg-white p-4 rounded-[28px] border border-[#ECE6DD] flex flex-col min-h-[480px] shadow-xs">
-              
-              <div className="pb-3 border-b border-[#ECE6DD] mb-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-[#18191D] truncate">{st.label}</span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FAF7F2] border border-[#ECE6DD]">
-                    {stageOpps.length}
-                  </span>
-                </div>
-                <div className="text-[11px] font-mono text-[#797E8B] mt-1 font-bold">
-                  ${(stageTotal || 0).toLocaleString()}
-                </div>
+      {viewMode === 'lifecycle_crm' ? (
+        <ClientLifecycleCRM />
+      ) : (
+        <>
+          {/* Success Notification Banner */}
+          {ingestSuccessMessage && (
+            <div className="p-4 bg-[#DCFCE7] border border-[#BBF7D0] rounded-2xl text-xs text-[#166534] font-semibold flex items-center justify-between shadow-xs animate-in fade-in duration-200">
+              <div className="flex items-center gap-2">
+                <Check className="w-4 h-4 text-[#166534]" />
+                <span>{ingestSuccessMessage}</span>
               </div>
-
-              <div className="space-y-3 flex-1 overflow-y-auto">
-                {stageOpps.map(opp => (
-                  <div 
-                    key={opp.id} 
-                    className="p-4 bg-[#FAF7F2] rounded-2xl border border-[#ECE6DD] hover:border-black/30 transition-all space-y-2 group shadow-2xs"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#18191D] group-hover:text-black transition-colors">
-                        {opp.prospectName}
-                      </span>
-                      <button
-                        onClick={() => deleteOpportunity(opp.id)}
-                        className="opacity-0 group-hover:opacity-100 text-[#797E8B] hover:text-rose-600 transition-opacity"
-                        title="Delete Opportunity"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <p className="text-[11px] text-[#797E8B] font-medium">{opp.company}</p>
-
-                    {opp.source && (
-                      <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full bg-white border border-[#ECE6DD] text-[#5B21B6]">
-                        {opp.source}
-                      </span>
-                    )}
-
-                    <div className="flex items-center justify-between text-xs pt-1">
-                      <span className="font-mono font-bold text-[#18191D]">${(opp.estimatedValue || 0).toLocaleString()}/mo</span>
-                      <span className="text-[10px] font-semibold text-[#797E8B]">{opp.confidencePercentage || 0}% Prob</span>
-                    </div>
-
-                    {/* Stage Selector */}
-                    <div className="pt-2 border-t border-[#ECE6DD] flex items-center justify-between gap-1">
-                      <select
-                        value={opp.stage ?? 'lead'}
-                        onChange={e => updateOpportunity(opp.id, { stage: e.target.value as Opportunity['stage'] })}
-                        className="text-[10px] font-semibold bg-white border border-[#ECE6DD] rounded-xl px-2 py-1 focus:outline-none w-full text-[#18191D]"
-                      >
-                        {stages.map(s => (
-                          <option key={s.id} value={s.id}>{s.label}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {opp.stage === 'won' && (
-                      <button
-                        onClick={() => handleConvertToClient(opp)}
-                        className="w-full mt-1.5 py-1.5 bg-[#18191D] hover:bg-black text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all shadow-2xs"
-                      >
-                        <Sparkles className="w-3 h-3 text-[#10B981]" /> Create Client Portal
-                      </button>
-                    )}
-
-                  </div>
-                ))}
-
-                {stageOpps.length === 0 && (
-                  <div className="py-12 text-center text-[11px] text-[#797E8B] italic">
-                    No deals in this stage
-                  </div>
-                )}
-              </div>
-
+              <button onClick={() => setIngestSuccessMessage(null)} className="text-[#166534] hover:opacity-75">
+                <X className="w-4 h-4" />
+              </button>
             </div>
-          );
-        })}
-      </div>
+          )}
+
+          {/* KPI Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-5">
+            <div className="bg-[#FEF9C3] p-5 rounded-[28px] border border-[#FEF08A] shadow-xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#854D0E]">Total Pipeline Value</span>
+              <div className="text-3xl font-black text-[#18191D] mt-1">${totalPipelineValue.toLocaleString()}</div>
+              <p className="text-xs text-[#854D0E] mt-1">{opportunities.length} active opportunities</p>
+            </div>
+
+            <div className="bg-[#EDE9FE] p-5 rounded-[28px] border border-[#DDD6FE] shadow-xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#5B21B6]">Weighted Forecast</span>
+              <div className="text-3xl font-black text-[#18191D] mt-1">${Math.round(weightedPipelineValue).toLocaleString()}</div>
+              <p className="text-xs text-[#5B21B6] mt-1">Probability-adjusted revenue</p>
+            </div>
+
+            <div className="bg-[#DCFCE7] p-5 rounded-[28px] border border-[#BBF7D0] shadow-xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#166534]">Closed / Won Deals</span>
+              <div className="text-3xl font-black text-[#18191D] mt-1">${wonValue.toLocaleString()}</div>
+              <p className="text-xs text-[#166534] mt-1">Converted retainer MRR</p>
+            </div>
+
+            <div className="bg-[#E0F2FE] p-5 rounded-[28px] border border-[#BAE6FD] shadow-xs">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#0369A1]">Win Rate</span>
+              <div className="text-3xl font-black text-[#18191D] mt-1">
+                {opportunities.length > 0 ? Math.round((opportunities.filter(o => o.stage === 'won').length / opportunities.length) * 100) : 0}%
+              </div>
+              <p className="text-xs text-[#0369A1] mt-1">Conversion efficiency</p>
+            </div>
+          </div>
+
+          {/* Tally.so Quick Banner */}
+          <div className="p-5 bg-white rounded-[28px] border border-[#ECE6DD] shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-[#EDE9FE] text-[#5B21B6] flex items-center justify-center font-bold text-xs shrink-0">
+                <Webhook className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-[#18191D]">Tally.so Lead Intake Integration</h3>
+                <p className="text-xs text-[#797E8B]">
+                  Directly sync your Tally contact / intake forms into this pipeline without manual data entry.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleCopyWebhook}
+                className="px-4 py-2 bg-[#FAF7F2] hover:bg-[#ECE6DD] text-[#18191D] border border-[#ECE6DD] rounded-full text-xs font-bold flex items-center gap-1.5 transition-all"
+              >
+                {copiedWebhook ? <Check className="w-3.5 h-3.5 text-[#10B981]" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedWebhook ? 'Copied Webhook!' : 'Copy Webhook URL'}
+              </button>
+              <button
+                onClick={() => setTallyModalOpen(true)}
+                className="px-4 py-2 bg-[#18191D] hover:bg-black text-white rounded-full text-xs font-bold flex items-center gap-1.5 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5" /> Setup Guide & Simulator
+              </button>
+            </div>
+          </div>
+
+          {/* Kanban Board of Stages */}
+          <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            {stages.map(st => {
+              const stageOpps = opportunities.filter(o => o.stage === st.id);
+              const stageTotal = stageOpps.reduce((acc, o) => acc + (o.estimatedValue || 0), 0);
+
+              return (
+                <div key={st.id} className="bg-white p-4 rounded-[28px] border border-[#ECE6DD] flex flex-col min-h-[480px] shadow-xs">
+                  
+                  <div className="pb-3 border-b border-[#ECE6DD] mb-3">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#18191D] truncate">{st.label}</span>
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-[#FAF7F2] border border-[#ECE6DD]">
+                        {stageOpps.length}
+                      </span>
+                    </div>
+                    <div className="text-[11px] font-mono text-[#797E8B] mt-1 font-bold">
+                      ${(stageTotal || 0).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <div className="space-y-3 flex-1 overflow-y-auto">
+                    {stageOpps.map(opp => (
+                      <div 
+                        key={opp.id} 
+                        className="p-4 bg-[#FAF7F2] rounded-2xl border border-[#ECE6DD] hover:border-black/30 transition-all space-y-2 group shadow-2xs"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-xs font-bold text-[#18191D] group-hover:text-black transition-colors">
+                            {opp.prospectName}
+                          </span>
+                          <button
+                            onClick={() => deleteOpportunity(opp.id)}
+                            className="opacity-0 group-hover:opacity-100 text-[#797E8B] hover:text-rose-600 transition-opacity"
+                            title="Delete Opportunity"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <p className="text-[11px] text-[#797E8B] font-medium">{opp.company}</p>
+
+                        {opp.source && (
+                          <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full bg-white border border-[#ECE6DD] text-[#5B21B6]">
+                            {opp.source}
+                          </span>
+                        )}
+
+                        <div className="flex items-center justify-between text-xs pt-1">
+                          <span className="font-mono font-bold text-[#18191D]">${(opp.estimatedValue || 0).toLocaleString()}/mo</span>
+                          <span className="text-[10px] font-semibold text-[#797E8B]">{opp.confidencePercentage || 0}% Prob</span>
+                        </div>
+
+                        {/* Stage Selector */}
+                        <div className="pt-2 border-t border-[#ECE6DD] flex items-center justify-between gap-1">
+                          <select
+                            value={opp.stage ?? 'lead'}
+                            onChange={e => updateOpportunity(opp.id, { stage: e.target.value as Opportunity['stage'] })}
+                            className="text-[10px] font-semibold bg-white border border-[#ECE6DD] rounded-xl px-2 py-1 focus:outline-none w-full text-[#18191D]"
+                          >
+                            {stages.map(s => (
+                              <option key={s.id} value={s.id}>{s.label}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {opp.stage === 'won' && (
+                          <button
+                            onClick={() => handleConvertToClient(opp)}
+                            className="w-full mt-1.5 py-1.5 bg-[#18191D] hover:bg-black text-white rounded-xl text-[10px] font-bold flex items-center justify-center gap-1 transition-all shadow-2xs"
+                          >
+                            <Sparkles className="w-3 h-3 text-[#10B981]" /> Create Client Portal
+                          </button>
+                        )}
+
+                      </div>
+                    ))}
+
+                    {stageOpps.length === 0 && (
+                      <div className="py-12 text-center text-[11px] text-[#797E8B] italic">
+                        No deals in this stage
+                      </div>
+                    )}
+                  </div>
+
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
 
       {/* Tally.so Integration & Webhook Setup Modal */}
       {tallyModalOpen && (
